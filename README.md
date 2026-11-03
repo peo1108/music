@@ -29,9 +29,11 @@ python -m unittest discover -s tests     :: chạy test
 | Thành phần | Vai trò |
 |---|---|
 | `player.py` | Cửa sổ (pywebview/WebView2) và server nội bộ `127.0.0.1:47816` phục vụ giao diện và file nhạc |
-| `online.py` | Tìm kiếm và phát từ YouTube/SoundCloud qua yt-dlp |
+| `online.py` | Tìm kiếm, đọc link playlist, bài liên quan, phát và lưu từ YouTube/SoundCloud qua yt-dlp |
+| `downloads.py` | Hàng tải nhạc về thư viện (2 bài cùng lúc, huỷ, thử lại, nhớ hàng chờ) |
+| `ytdlp_update.py` | Tự cập nhật yt-dlp từ PyPI, không cần phát hành bản app mới |
 | `core.py` | Phiên bản, thư mục dữ liệu, log, tìm ffmpeg/Deno |
-| `updater.py` | Kiểm tra và cài bản mới từ GitHub Releases |
+| `updater.py` | Kiểm tra và cài bản mới của app từ GitHub Releases |
 | `web/` | Giao diện: `index.html`, `player.css`, `js/*.js` (nạp theo thứ tự trong `index.html`) |
 | `installer/` | Script Inno Setup tạo bộ cài |
 | `nhac_app.py`, `tai_audio.py` | Công cụ tải nhạc và sửa tag cũ (`TaiNhac.bat`) |
