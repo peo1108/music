@@ -1,4 +1,5 @@
 """Phần dùng chung cho cả app: phiên bản, thư mục dữ liệu, nhật ký lỗi, tìm công cụ ngoài (ffmpeg, Deno)."""
+import json
 import logging
 import logging.handlers
 import os
@@ -20,6 +21,24 @@ WINGET_LINKS = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Wi
 TOOLS = {"ffmpeg": "Gyan.FFmpeg", "deno": "DenoLand.Deno"}
 
 log = logging.getLogger("nhac")
+
+
+# ---------------------------------------------------------------- file JSON
+def read_json(path):
+    """Đọc file JSON; thiếu file hoặc file hỏng (vd. ghi dở khi tắt máy) thì trả về None."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def write_json(path, data):
+    """Ghi qua file tạm rồi đổi tên: tắt máy giữa chừng cũng không để lại file hỏng."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------- nhật ký lỗi

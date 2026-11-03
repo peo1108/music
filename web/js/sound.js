@@ -30,14 +30,6 @@ function buildSound() {
   xf.value = S.settings.crossfade;
   showXf();
   xf.addEventListener("input", () => { S.settings.crossfade = +xf.value; showXf(); save(); });
-  const gt = $("#glassToggle");
-  gt.checked = S.settings.glass;
-  gt.addEventListener("change", () => { S.settings.glass = gt.checked; save(); applyGlassAll(); });
-  const mt = $("#motionToggle");
-  const applyMotion = () => document.body.classList.toggle("motion", !!S.settings.motion);
-  mt.checked = !!S.settings.motion;
-  applyMotion();
-  mt.addEventListener("change", () => { S.settings.motion = mt.checked; save(); applyMotion(); });
 }
 function toggleSound(force) {
   const p = $("#sound");

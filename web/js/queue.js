@@ -54,16 +54,18 @@ function queueHtml() {
   const tools = `<div class="q-tools"><button class="pill" data-queue-save>${icon("plus")}Lưu thành playlist</button><button class="pill" data-queue-add>${icon("addQ")}Thêm vào playlist</button></div>`;
   return `${tools}<div class="q-head">Đang phát</div>${item(nowT, qi, true)}
     <div class="q-head">Tiếp theo ${upcoming.length ? `<button data-clearq>Xoá hết</button>` : ""}</div>
-    ${upcoming.length ? upcoming.map(([t, i]) => item(t, i, false)).join("") : `<div class="empty" style="padding:20px">Không còn bài nào.</div>`}`;
+    ${upcoming.length ? upcoming.map(([t, i]) => (i === radioStart ? RADIO_HEAD : "") + item(t, i, false)).join("") : `<div class="empty" style="padding:20px">Không còn bài nào.</div>`}
+    ${radioEnabled() ? `<div class="q-note">${icon("spark")}Hết danh sách sẽ tự phát bài liên quan</div>` : ""}`;
 }
+const RADIO_HEAD = `<div class="q-head">Tự động phát <span class="q-sub">bài liên quan</span></div>`;
 let dragQi = null;
 for (const qBox of [$("#rpQueue"), $("#npQueue")]) {
   qBox.addEventListener("click", (e) => {
     if (e.target.closest("[data-queue-save]")) { saveQueuePlaylist(); return; }
     if (e.target.closest("[data-queue-add]")) { addManyToPlaylist(Q, e); return; }
     const rm = e.target.closest("[data-rm]");
-    if (rm) { Q.splice(+rm.dataset.rm, 1); renderQueue(); saveSession(true); return; }
-    if (e.target.closest("[data-clearq]")) { Q = Q.slice(0, qi + 1); renderQueue(); saveSession(true); return; }
+    if (rm) { const i = +rm.dataset.rm; Q.splice(i, 1); if (i < radioStart) radioStart--; renderQueue(); saveSession(true); return; }
+    if (e.target.closest("[data-clearq]")) { Q = Q.slice(0, qi + 1); radioStart = -1; renderQueue(); saveSession(true); return; }
     const it = e.target.closest(".q-item:not(.now)");
     if (it) { qi = +it.dataset.qi; startTrack(); }
   });

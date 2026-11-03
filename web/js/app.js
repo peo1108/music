@@ -36,36 +36,37 @@ function renderNotice() {
   box.hidden = false;
 }
 
-// ---------- Thông tin app & thư mục thư viện ----------
+// ---------- Thông tin app (trang Cài đặt hiển thị) ----------
+let appInfo = null;
+const appStatus = { update: "", ytdlp: "" }; // dòng trạng thái dưới mục Cập nhật
+const rerenderSettings = () => { if (view.name === "settings" || view.name === "welcome") renderView(false); };
 async function refreshAppInfo() {
   const info = await py("app_info");
   if (!info) return;
-  $("#appVersion").textContent = `Phiên bản ${info.version}`;
-  $("#libDir").textContent = info.library;
-  $("#libDir").title = info.library;
+  appInfo = info;
+  rerenderSettings();
 }
-$("#libChange").addEventListener("click", async () => {
+async function changeLibrary() {
   const dir = await py("choose_library");
   if (!dir) return;
   await loadLibrary();
   renderSidebar();
-  refreshAppInfo();
-  if (["home", "songs", "albums", "artists", "album", "artist", "search"].includes(view.name)) renderView(false);
+  await refreshAppInfo();
+  if (LIBRARY_VIEWS.includes(view.name)) renderView(false);
   toast("Đã đổi thư mục thư viện");
-});
-$("#openLogs").addEventListener("click", () => py("open_logs"));
+}
 
 // ---------- Cập nhật từ GitHub Releases ----------
 let updateInfo = null;
 async function checkUpdate(force = false) {
-  const hint = $("#updateHint");
-  if (force) hint.textContent = "Đang kiểm tra…";
+  const setStatus = (s) => { appStatus.update = s; rerenderSettings(); };
+  if (force) setStatus("Đang kiểm tra…");
   const u = await py("check_update", force);
-  if (!u) { hint.textContent = ""; return; }
+  if (!u) { setStatus(""); return; }
   updateInfo = u;
-  if (u.error) hint.textContent = force ? `Không kiểm tra được: ${u.error}` : "";
-  else if (u.available) hint.textContent = `Có bản mới ${u.latest}`;
-  else hint.textContent = "Đang dùng bản mới nhất";
+  if (u.error) setStatus(force ? `Không kiểm tra được: ${u.error}` : "");
+  else if (u.available) setStatus(`Có bản mới ${u.latest}`);
+  else setStatus("Đang dùng bản mới nhất");
   if (!u.available) return;
   if (force) dismissed.delete("update");
   const actions = u.canInstall
@@ -86,7 +87,16 @@ async function installUpdate() {
   }
   toast("Đang cài bản mới, app sẽ tự mở lại…", 600000);
 }
-$("#updateCheck").addEventListener("click", () => checkUpdate(true));
+
+// ---------- yt-dlp: bộ tải YouTube/SoundCloud, tự cập nhật không cần bản app mới ----------
+async function updateYtdlp() {
+  appStatus.ytdlp = "Đang kiểm tra…";
+  rerenderSettings();
+  const r = await py("update_ytdlp");
+  appStatus.ytdlp = !r ? "" : r.error ? `Không cập nhật được: ${r.error}` : r.updated ? `Đã cập nhật lên ${r.version}` : "Đang dùng bản mới nhất";
+  await refreshAppInfo();
+  rerenderSettings();
+}
 
 // ---------- ffmpeg / Deno: thiếu thì YouTube, dạng sóng, lưu mp3 không chạy ----------
 const TOOL_NAMES = { ffmpeg: "ffmpeg", deno: "Deno" };
@@ -104,15 +114,15 @@ async function checkDeps() {
   setNotice("deps", {
     html: `Thiếu <b>${esc(names)}</b>: ${why}`,
     actions: [
-      { label: "Cài ngay", accent: true, run: async (key) => {
-        dismissNotice(key);
-        const ok = await py("install_deps");
-        depsInstalling = !!ok;
-        toast(ok ? "Đang cài trong cửa sổ dòng lệnh, xong thì quay lại app" : "Không mở được trình cài", 5000);
-      } },
+      { label: "Cài ngay", accent: true, run: (key) => { dismissNotice(key); installDeps(); } },
       { label: "Để sau", run: dismissNotice },
     ],
   });
+}
+async function installDeps() {
+  const ok = await py("install_deps");
+  depsInstalling = !!ok;
+  toast(ok ? "Đang cài trong cửa sổ dòng lệnh, xong thì quay lại app" : "Không mở được trình cài", 5000);
 }
 // Bấm "Cài ngay" rồi quay lại app thì kiểm tra lại (còn thiếu thì báo lại để cài tiếp)
 let depsInstalling = false;
@@ -121,6 +131,7 @@ addEventListener("focus", () => {
   depsInstalling = false;
   dismissed.delete("deps");
   checkDeps();
+  refreshAppInfo();
 });
 
 function initApp() {

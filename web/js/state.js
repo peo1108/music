@@ -3,7 +3,7 @@
 // =====================================================================================
 // Dữ liệu lưu lại (yêu thích, danh sách phát, lượt nghe, cài đặt, phiên nghe)
 // =====================================================================================
-const DEFAULT_SETTINGS = { volume: 0.8, muted: false, eq: [0, 0, 0, 0, 0], shuffle: false, repeat: "all", crossfade: 4, glass: true, motion: false, preferOffline: false };
+const DEFAULT_SETTINGS = { volume: 0.8, muted: false, eq: [0, 0, 0, 0, 0], shuffle: false, repeat: "off", crossfade: 4, glass: true, motion: false, preferOffline: false, autoplay: true, onboarded: false };
 const S = { favorites: [], playlists: [], plays: {}, folders: [], settings: { ...DEFAULT_SETTINGS }, session: null };
 let saveTimer = 0;
 let stateLoaded = false; // chưa đọc xong dữ liệu cũ thì tuyệt đối không ghi, kẻo đè mất

@@ -26,7 +26,7 @@ function trackMenu(p, x, y, removable) {
   if (!t) return;
   const items = [
     { ic: "play", label: "Phát", run: () => playList([p]) },
-    { ic: "nextUp", label: "Phát tiếp theo", run: () => { if (!curPath()) return playList([p]); Q.splice(qi + 1, 0, p); renderQueue(); toast("Sẽ phát tiếp theo"); } },
+    { ic: "nextUp", label: "Phát tiếp theo", run: () => { if (!curPath()) return playList([p]); Q.splice(qi + 1, 0, p); if (radioStart > qi) radioStart++; renderQueue(); toast("Sẽ phát tiếp theo"); } },
     { ic: "addQ", label: "Thêm vào hàng đợi", run: () => { if (!curPath()) return playList([p]); Q.push(p); renderQueue(); toast("Đã thêm vào hàng đợi"); } },
     "-",
     { ic: isFav(p) ? "heartFill" : "heart", label: isFav(p) ? "Bỏ yêu thích" : "Yêu thích", run: () => toggleFav(p) },

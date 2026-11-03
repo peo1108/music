@@ -22,6 +22,7 @@ function playList(paths, i = 0, { shuffle = false } = {}) {
   Q = paths.slice();
   qi = clamp(i, 0, Q.length - 1);
   origQ = null;
+  radioStart = -1;
   if (shuffle) {
     S.settings.shuffle = true;
     qi = Math.floor(Math.random() * Q.length);
@@ -71,6 +72,7 @@ async function startTrack({ fade = 0.5, at = 0, autoplay = true } = {}) {
     saveSession();
     await play(fade);
     prefetchNext();
+    maybeExtendRadio();
   } else syncPlayState();
 }
 
@@ -120,7 +122,13 @@ function nextIndex(auto) {
 }
 function next(auto = false) {
   const n = nextIndex(auto);
-  if (n === null) { pause(); cur().el.currentTime = 0; return; }
+  if (n === null) {
+    const stop = () => { pause(); cur().el.currentTime = 0; };
+    // Hết danh sách: tự thêm bài liên quan rồi phát tiếp (nếu bật Tự phát và không bật Lặp)
+    if (radioEnabled()) { extendRadio().then((added) => (added && qi + 1 < Q.length ? next(auto) : stop())); return; }
+    stop();
+    return;
+  }
   qi = n;
   startTrack({ fade: auto ? 0.05 : 0.5 });
   renderQueue();

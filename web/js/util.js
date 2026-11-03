@@ -23,6 +23,11 @@ const fmtLong = (s) => {
 // server từ chối mọi /api/ thiếu header này -> trang khác mở trong trình duyệt không đụng được vào app.
 const api = (url, opts = {}) => fetch(url, { ...opts, headers: { "X-Nhac": "1", ...(opts.headers || {}) } });
 const setText = (el, s) => { if (el.textContent !== s) el.textContent = s; };
+const postJson = (url, body) => api(url, { method: "POST", body: JSON.stringify(body) }).then((r) => r.json());
+// Hành động của nút có data-action="tên" trong vùng nội dung: ACTIONS.tên(nút, sự kiện)
+const ACTIONS = {};
+const LINK_RE = /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|soundcloud\.com)(\/|$)/i;
+const isLink = (s) => LINK_RE.test(String(s || "").trim());
 const coverUrl = (p) => "/cover?p=" + enc(p);
 const isOnline = (p) => typeof p === "string" && (p.startsWith("yt:") || p.startsWith("sc:"));
 const mediaUrl = (p) => (isOnline(p) ? "/stream?p=" : "/audio?p=") + enc(p);
@@ -74,6 +79,8 @@ const IC = {
   globe: { d: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/>' },
   download: { d: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/>' },
   spark: { d: '<path d="M12 2v5M12 17v5M2 12h5M17 12h5M5.2 5.2l3.5 3.5M15.3 15.3l3.5 3.5M18.8 5.2l-3.5 3.5M8.7 15.3l-3.5 3.5"/>' },
+  check: { d: '<path d="M20 6 9 17l-5-5"/>' },
+  gear: { d: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>' },
 };
 const icon = (name, cls = "") => {
   const i = IC[name];

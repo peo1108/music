@@ -29,9 +29,11 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4, MP4Cover
 
 import core
+import downloads
 import online
 import updater
-from core import DATA_DIR, NO_WINDOW, log
+import ytdlp_update
+from core import DATA_DIR, NO_WINDOW, log, read_json, write_json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = getattr(sys, "_MEIPASS", HERE)
@@ -73,24 +75,6 @@ css_scale = 1.0  # tỉ lệ điểm ảnh thật / px giao diện (devicePixelR
 window_sized = False
 state_lock = threading.Lock()
 settings_lock = threading.Lock()
-
-
-# ---------------------------------------------------------------- tiện ích
-def read_json(path):
-    """Đọc file JSON; thiếu file hoặc file hỏng (vd. ghi dở khi tắt máy) thì trả về None."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    except (OSError, ValueError):
-        return None
-
-
-def write_json(path, data):
-    """Ghi qua file tạm rồi đổi tên: tắt máy giữa chừng cũng không để lại file hỏng."""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
 
 
 # ---------------------------------------------------------------- cài đặt & thư viện nhạc
@@ -369,6 +353,40 @@ def compute_peaks(path, buckets=800):
     return peaks
 
 
+# ---------------------------------------------------------------- tự phát tiếp & hàng tải
+def radio_for(p):
+    """Bài liên quan để phát tiếp sau bài p. Bài trong máy thì tìm bản trên YouTube rồi lấy Mix của nó."""
+    if online.is_online(p):
+        return online.related(p)
+    path = audio_path(p)
+    if not path:
+        return []
+    info = read_track(path)
+    title, artist = clean_title(info["title"], info["artist"])
+    found = online.search("yt", f"{title} {artist}".strip())
+    if not found:
+        return []
+    seed = found[0]["file"]
+    return [t for t in online.related(seed) if t["file"] != seed]
+
+
+def downloads_action(body):
+    action = body.get("action") if isinstance(body, dict) else None
+    if action == "add":
+        return {"ok": True, **downloads.add([u for u in body.get("uris") or [] if isinstance(u, str)])}
+    if action == "cancel":
+        downloads.cancel(int(body.get("id") or 0))
+    elif action == "cancelAll":
+        downloads.cancel_all()
+    elif action == "retry":
+        downloads.retry(int(body.get("id") or 0))
+    elif action == "clear":
+        downloads.clear_finished()
+    else:
+        raise ValueError("action")
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- server
 def parse_range(header, size):
     """Header Range -> (start, end, status). 206: đoạn hợp lệ; 416: vượt cuối file;
@@ -499,7 +517,7 @@ class Handler(BaseHTTPRequestHandler):
                 path = audio_path(p)
                 self.send_json(find_lyrics(path) if path else {})
         elif url.path == "/api/peaks":
-            path = online.cached(p) if online.is_online(p) else audio_path(p)
+            path = online.local_file(p) if online.is_online(p) else audio_path(p)
             peaks = compute_peaks(path) if path else None
             if peaks:
                 self.send_json(peaks)
@@ -512,7 +530,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(online.search(src, text))
             except Exception as exc:
                 log.warning("Tìm %s lỗi: %s", src, exc)
+                ytdlp_update.on_failure()
                 self.send_json({"error": str(exc)[:400]})
+        elif url.path == "/api/link":
+            try:
+                self.send_json({"ok": True, **online.open_link(q.get("u", [""])[0])})
+            except Exception as exc:
+                log.warning("Không đọc được link: %s", exc)
+                self.send_json({"ok": False, "error": str(exc)[:300]})
+        elif url.path == "/api/radio":
+            try:
+                self.send_json({"ok": True, "tracks": radio_for(p)})
+            except Exception as exc:
+                log.warning("Không lấy được bài liên quan cho %s: %s", p, exc)
+                self.send_json({"ok": False, "error": str(exc)[:300]})
+        elif url.path == "/api/downloads":
+            self.send_json(downloads.snapshot())
         elif url.path == "/api/prepare":
             try:
                 if not online.is_online(p):
@@ -524,17 +557,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(reply)
             except Exception as exc:
                 log.warning("Không chuẩn bị được %s: %s", p, exc)
-                self.send_json({"ok": False, "error": str(exc)[:400]})
-        elif url.path == "/api/save":
-            try:
-                if not online.is_online(p):
-                    raise online.OnlineError("Bài hát không hợp lệ")
-                folder = library_dir()
-                os.makedirs(folder, exist_ok=True)
-                path = online.save(p, folder)
-                self.send_json({"ok": True, "file": path})
-            except Exception as exc:
-                log.warning("Không lưu được %s: %s", p, exc)
                 self.send_json({"ok": False, "error": str(exc)[:400]})
         elif url.path == "/api/ping":
             self.send_bytes(b"nhacplayer", "text/plain")
@@ -572,6 +594,8 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/meta":
                 items = [track_info(x) for x in json.loads(body)]
                 self.send_json([x for x in items if x])
+            elif url.path == "/api/downloads":
+                self.send_json(downloads_action(json.loads(body)))
             else:
                 self.not_found()
         except ValueError:
@@ -824,7 +848,21 @@ class Api:
 
     # ---- mục Ứng dụng trong bảng Âm thanh
     def app_info(self):
-        return {"version": core.VERSION, "library": library_dir(), "frozen": core.FROZEN}
+        return {"version": core.VERSION, "library": library_dir(), "frozen": core.FROZEN,
+                "ytdlp": ytdlp_update.current_version(), "dataDir": DATA_DIR,
+                "tools": {name: bool(core.find_tool(name)) for name in core.TOOLS},
+                "winget": core.winget_available()}
+
+    def update_ytdlp(self):
+        return ytdlp_update.update_quietly(force=True)
+
+    def open_library(self):
+        path = library_dir()
+        os.makedirs(path, exist_ok=True)
+        os.startfile(path)
+
+    def open_data(self):
+        os.startfile(DATA_DIR)
 
     def choose_library(self):
         path = self.pick_folder()
@@ -938,6 +976,10 @@ def main():
 
     if forward_to_running(path):
         return
+
+    ytdlp_update.activate()  # trước khi bất cứ thứ gì nạp yt_dlp
+    downloads.start(library_dir)
+    ytdlp_update.start_background()
 
     server = make_server()
     server.daemon_threads = True

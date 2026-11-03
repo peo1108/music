@@ -53,11 +53,17 @@ def pyinstaller():
         except (ImportError, ValueError):
             pass
     shutil.rmtree(APP_DIR, ignore_errors=True)
+    # Ghi phiên bản yt-dlp đóng gói sẵn: app so với bản tự cập nhật (ytdlp_update.py)
+    from importlib.metadata import version
+    os.makedirs(BUILD, exist_ok=True)
+    info = os.path.join(BUILD, "build_info.json")
+    core.write_json(info, {"app": core.VERSION, "yt_dlp": version("yt-dlp")})
     PyInstaller.__main__.run([
         os.path.join(HERE, "player.py"),
         "--name", core.APP, "--windowed", "--noconfirm", "--log-level", "WARN",
         "--icon", os.path.join(HERE, "player.ico"),
         "--add-data", os.path.join(HERE, "web") + os.pathsep + "web",
+        "--add-data", info + os.pathsep + ".",
         "--distpath", os.path.join(BUILD, "dist"),
         "--workpath", os.path.join(BUILD, "work"),
         "--specpath", BUILD,

@@ -14,8 +14,10 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import core
+import ytdlp_update
 
 DATA_DIR = core.DATA_DIR
 CACHE_DIR = os.path.join(DATA_DIR, "online")
@@ -38,9 +40,17 @@ class OnlineError(Exception):
 
 
 def _ydl(opts):
-    """Tạo YoutubeDL. Chỉ nạp yt_dlp khi cần thật (thư viện nặng ~50MB RAM), kèm đường dẫn ffmpeg/Deno."""
-    import yt_dlp
+    """Tạo YoutubeDL. Chỉ nạp yt_dlp khi cần thật (thư viện nặng ~50MB RAM), kèm đường dẫn ffmpeg/Deno.
+    Nạp qua ytdlp_update để dùng bản yt-dlp tự cập nhật nếu có."""
+    yt_dlp = ytdlp_update.import_ytdlp()
     return yt_dlp.YoutubeDL({**core.ytdl_options(), **opts})
+
+
+LINK = re.compile(r"^https?://([\w-]+\.)*(youtube\.com|youtu\.be|soundcloud\.com)(/|$)", re.I)
+
+
+def is_link(text):
+    return bool(LINK.match((text or "").strip()))
 
 
 def is_online(p):
@@ -139,6 +149,112 @@ def search(src, query):
     return tracks
 
 
+# ---------------------------------------------------------------- dán link: playlist / bài lẻ
+def _entry_track(e):
+    """Mục của yt-dlp (dạng rút gọn trong playlist hoặc đầy đủ) -> bài của app, hoặc None."""
+    key = e.get("ie_key") or e.get("extractor_key") or ""
+    if key == "Youtube":
+        return _track("yt", {**e, "ie_key": "Youtube"})
+    if key == "Soundcloud":
+        web = (e.get("webpage_url") or e.get("url") or "").split("?")[0]
+        return _track("sc", {**e, "ie_key": "Soundcloud", "webpage_url": web})
+    return None
+
+
+def _sc_full(t):
+    """Hỏi thêm tên/ca sĩ/thời lượng/ảnh của 1 bài SoundCloud (playlist rút gọn của SoundCloud chỉ có ID)."""
+    try:
+        opts = {"quiet": True, "no_warnings": True, "skip_download": True, "socket_timeout": 10}
+        info = _ydl(opts).extract_info(t["web"], download=False, process=False)
+        full = _track("sc", {**info, "ie_key": "Soundcloud", "webpage_url": info.get("webpage_url") or t["web"]})
+        return full if full and full["file"] == t["file"] else t
+    except Exception:
+        return t
+
+
+def _enrich(tracks, limit=200):
+    """Bổ sung thông tin cho các bài SoundCloud còn thiếu, chạy song song 8 bài một lúc."""
+    out, todo = [], []
+    for t in tracks:
+        old = meta(t["file"]) or {}
+        if t["file"].startswith("sc:") and not t.get("duration"):
+            if old.get("duration"):
+                t = {**t, **old}  # đã biết từ trước
+            elif len(todo) < limit:
+                todo.append(t)
+        out.append(t)
+    if todo:
+        with ThreadPoolExecutor(8) as pool:
+            full = {t["file"]: t for t in pool.map(_sc_full, todo)}
+        out = [full.get(t["file"], t) for t in out]
+    return out
+
+
+def open_link(url, limit=500):
+    """Đọc link YouTube/SoundCloud. Trả về {kind, title, tracks, lists...}:
+    kind = "track" (bài lẻ), "playlist" (playlist, Mix, set, album) hoặc "playlists" (trang kênh có nhiều playlist)."""
+    url = (url or "").strip()
+    if not is_link(url):
+        raise OnlineError("Chỉ hỗ trợ link YouTube và SoundCloud")
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": "in_playlist",
+            "playlistend": limit, "socket_timeout": 15}
+    try:
+        data = _ydl(opts).extract_info(url, download=False)
+    except Exception as e:
+        ytdlp_update.on_failure()
+        raise OnlineError(_clean_error(e)) from e
+    lists = []
+    if data.get("entries") is None:
+        t = _entry_track(data)
+        tracks = [t] if t else []
+        kind = "track"
+    else:
+        tracks, seen = [], set()
+        for e in data["entries"]:
+            if not e:
+                continue
+            t = _entry_track(e)
+            if t and t["file"] not in seen:
+                seen.add(t["file"])
+                tracks.append(t)
+            elif not t and e.get("url"):
+                lists.append({"title": e.get("title") or e["url"], "url": e["url"]})
+        kind = "playlist" if tracks or not lists else "playlists"
+    tracks = _enrich(tracks)
+    _remember(tracks)
+    return {"kind": kind, "source": "sc" if "soundcloud.com" in url.lower() else "yt", "url": url,
+            "title": data.get("title") or "", "uploader": data.get("uploader") or data.get("channel") or "",
+            "tracks": tracks, "lists": lists if kind == "playlists" else []}
+
+
+def related(uri, limit=25):
+    """Bài liên quan để tự phát tiếp khi hết danh sách: YouTube Mix / SoundCloud Recommended."""
+    if uri.startswith("yt:") and YT_ID.match(uri[3:]):
+        vid = uri[3:]
+        url = f"https://www.youtube.com/watch?v={vid}&list=RD{vid}"
+    elif uri.startswith("sc:"):
+        web = _web(uri, meta(uri))
+        if not web:
+            return []
+        url = web.split("?")[0].rstrip("/") + "/recommended"
+        limit = min(limit, 15)  # SoundCloud phải hỏi thêm từng bài -> lấy ít
+    else:
+        return []
+    return [t for t in open_link(url, limit)["tracks"] if t["file"] != uri]
+
+
+# ---------------------------------------------------------------- file nhạc trên máy của bài online
+def saved_path(uri):
+    """File mp3 đã lưu vào thư viện từ bài này (nếu còn)."""
+    path = (meta(uri) or {}).get("saved")
+    return path if path and os.path.isfile(path) else None
+
+
+def local_file(uri):
+    """File nghe được không cần mạng: bản đã lưu vào thư viện, hoặc bản đệm lúc phát."""
+    return saved_path(uri) or cached(uri)
+
+
 def cached(uri):
     base = os.path.join(CACHE_DIR, cache_key(uri))
     for path in glob.glob(base + ".*"):
@@ -190,6 +306,7 @@ def prepare(uri):
                         os.remove(leftover)
                     except OSError:
                         pass
+            ytdlp_update.on_failure()
             raise OnlineError(_clean_error(e)) from e
         path = cached(uri)
         if not path:
@@ -213,9 +330,15 @@ def _clean_base(base):
             pass
 
 
-def save(uri, folder):
+def save(uri, folder, progress=None):
+    """Tải bài về thư mục thư viện thành mp3 (kèm tên bài, ca sĩ, ảnh bìa). Trả về đường dẫn file.
+
+    progress(tỉ lệ 0..1 hoặc None): gọi trong lúc tải; nó raise exception thì lượt tải bị huỷ."""
     if not is_online(uri):
         raise OnlineError("Bài hát không hợp lệ")
+    already = saved_path(uri)
+    if already:
+        return already
     info = meta(uri) or {}
     web = _web(uri, info)
     if not web:
@@ -223,6 +346,20 @@ def save(uri, folder):
     if not core.find_tool("ffmpeg"):
         raise OnlineError("Cần ffmpeg để lưu mp3: winget install Gyan.FFmpeg")
     os.makedirs(folder, exist_ok=True)
+
+    def on_download(d):
+        if not progress:
+            return
+        if d.get("status") == "downloading":
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+            progress(0.9 * min(1.0, (d.get("downloaded_bytes") or 0) / total) if total else None)
+        elif d.get("status") == "finished":
+            progress(0.9)
+
+    def on_postprocess(d):
+        if progress and d.get("status") == "started":
+            progress(0.95)
+
     with _lock:
         lock = _save_locks.setdefault(uri, threading.Lock())
     with lock:
@@ -235,11 +372,13 @@ def save(uri, folder):
                     {"key": "FFmpegMetadata"},
                     {"key": "EmbedThumbnail"},
                 ],
+                "progress_hooks": [on_download], "postprocessor_hooks": [on_postprocess],
                 "socket_timeout": 20, "retries": 2}
         try:
             data = _ydl(opts).extract_info(web, download=True)
         except Exception as e:
             _clean_base(base)
+            ytdlp_update.on_failure()
             raise OnlineError(_clean_error(e)) from e
         filepath = ((data or {}).get("requested_downloads") or [{}])[0].get("filepath") or ""
         candidates = []
@@ -265,6 +404,7 @@ def save(uri, folder):
         except OSError:
             shutil.move(source, target)
         _clean_base(base)
+        _remember([{"file": uri, "saved": target}])  # nhớ để lần sau phát bản offline, khỏi tải lại
         return target
 
 
@@ -316,6 +456,7 @@ def resolve(uri):
             except Exception as e:
                 error = _clean_error(e)
         if not url or error:
+            ytdlp_update.on_failure()
             raise OnlineError(error or "Không kết nối được luồng phát")
         result = {"kind": "http", "url": url, "headers": headers,
                   "ext": data.get("ext") or "", "expires": _expiry(url)}
@@ -339,7 +480,7 @@ def invalidate(uri):
 
 
 def stream_target(uri):
-    path = cached(uri)
+    path = local_file(uri)  # đã lưu vào thư viện / đã đệm -> phát từ máy, không cần mạng
     if path:
         return {"kind": "file", "path": path}
     if uri.startswith("yt:"):

@@ -8,7 +8,7 @@ const backStack = [];
 const content = $("#content");
 
 function go(v, remember = true) {
-  if (remember && (v.name === "album" || v.name === "artist" || v.name === "auto")) backStack.push(view);
+  if (remember && ["album", "artist", "auto", "link"].includes(v.name)) backStack.push(view);
   else if (remember) backStack.length = 0;
   view = v;
   renderView();
@@ -42,6 +42,10 @@ function renderView(animate = true) {
   else if (v.name === "playlists") html = playlistsHtml();
   else if (v.name === "auto") html = autoHtml(v.key);
   else if (v.name === "search") html = searchHtml(v.q);
+  else if (v.name === "link") html = linkHtml(v.url);
+  else if (v.name === "downloads") html = downloadsHtml();
+  else if (v.name === "settings") html = settingsHtml();
+  else if (v.name === "welcome") html = welcomeHtml();
   content.innerHTML = `<div class="view" ${animate ? "" : 'style="animation:none"'}>${html}</div>`;
   markNav();
   markPlaying();
@@ -146,8 +150,11 @@ function playlistHtml(id) {
   if (!pl) return `<div class="empty">Danh sách phát không còn.</div>`;
   currentList = pl.tracks.map(T).filter(Boolean);
   const art = `<div class="big-art">${playlistCover(currentList)}</div>`;
-  return headerHtml({ title: pl.name, kind: "Danh sách phát", art, stats: statsText(currentList), actions: true,
-    extra: `<button class="pill" data-rename="${id}">${icon("pencil")}Đổi tên</button><button class="pill" data-pl-menu="${id}">${icon("more")}Khác</button>` })
+  const hasOnline = pl.tracks.some(isOnline);
+  const extra = (pl.source ? `<button class="pill" data-action="refreshSource" data-id="${id}" title="Lấy thêm bài mới từ playlist gốc">${icon("repeat")}Cập nhật từ nguồn</button>` : "")
+    + (hasOnline ? `<button class="pill" data-action="playlistDownload" data-id="${id}">${icon("download")}Tải về máy</button>` : "")
+    + `<button class="pill" data-rename="${id}">${icon("pencil")}Đổi tên</button><button class="pill" data-pl-menu="${id}">${icon("more")}Khác</button>`;
+  return headerHtml({ title: pl.name, kind: pl.source ? `Danh sách phát · từ ${/soundcloud/i.test(pl.source) ? "SoundCloud" : "YouTube"}` : "Danh sách phát", art, stats: statsText(currentList), actions: true, extra })
     + (currentList.length ? songsHtml(currentList, { removable: true }) : `<div class="empty">Chuột phải vào bài bất kỳ → “Thêm vào danh sách phát”.</div>`);
 }
 function folderHtml() {

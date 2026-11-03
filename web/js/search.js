@@ -163,24 +163,5 @@ function prefetchNext() {
   const next = Q[qi + 1];
   if (isOnline(next)) prepareOnline(next);
 }
-const saving = new Set();
-async function saveOffline(p) {
-  if (!isOnline(p) || saving.has(p)) return;
-  saving.add(p);
-  toast("Đang lưu bài vào thư viện…", 120000);
-  try {
-    const res = await (await api("/api/save?p=" + enc(p))).json();
-    if (!res || !res.ok) {
-      toast((res && res.error) || "Không lưu được bài này");
-      return;
-    }
-    await loadLibrary();
-    hideToast();
-    toast("Đã lưu vào thư viện");
-    if (["search", "songs", "favorites", "recent"].includes(view.name)) renderView(false);
-  } catch {
-    toast("Không lưu được bài này");
-  } finally {
-    saving.delete(p);
-  }
-}
+// Lưu 1 bài: đưa vào hàng tải chung (trang "Tải về")
+const saveOffline = (p) => queueDownloads([p]);

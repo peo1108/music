@@ -509,3 +509,77 @@ body.maxed .grip { display: none; }
 .notice-text { line-height: 1.45; }
 .notice-text b { font-weight: 700; }
 .notice-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ================= Dán link: đang tải, danh sách playlist con ================= */
+.loading-box { display: flex; align-items: center; justify-content: center; gap: 12px; color: var(--text2); padding: 80px 0; }
+.spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid rgba(255, 255, 255, .15); border-top-color: var(--accent);
+           animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.link-lists { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.link-list { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; text-align: left;
+             background: rgba(255, 255, 255, .06); animation: rowIn .45s var(--ease) both; animation-delay: calc(min(var(--i, 0), 24) * 20ms); }
+.link-list:hover { background: rgba(255, 255, 255, .11); }
+.link-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+
+/* ================= Tải về ================= */
+.dl-list { display: flex; flex-direction: column; gap: 4px; }
+.dl-row { display: grid; grid-template-columns: 44px 1fr 150px 70px; gap: 14px; align-items: center; padding: 8px 10px; border-radius: 12px; }
+.dl-row:hover { background: var(--hover); }
+.dl-row .thumb { width: 44px; height: 44px; border-radius: 8px; overflow: hidden; background: rgba(255, 255, 255, .07); display: grid; place-items: center; }
+.dl-row .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dl-row .thumb svg { color: var(--text3); }
+.dl-main { min-width: 0; }
+.dl-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-sub { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-bar { height: 4px; border-radius: 4px; background: rgba(255, 255, 255, .1); margin-top: 7px; overflow: hidden; }
+.dl-bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width .6s var(--ease); }
+.dl-row.done .dl-bar i { background: rgba(120, 220, 150, .85); }
+.dl-row.error .dl-bar, .dl-row.canceled .dl-bar { opacity: .4; }
+.dl-status { font-size: 12.5px; color: var(--text2); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.dl-row.error .dl-status { color: #ff9b9b; }
+.dl-row .x { justify-self: end; color: var(--text3); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.dl-row .x:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.dl-row .pill.sm { justify-self: end; }
+.dl-ok { justify-self: end; color: rgb(120, 220, 150); display: grid; place-items: center; width: 28px; height: 28px; }
+
+/* ================= Hàng đợi: phần tự động phát ================= */
+.q-sub { font-weight: 500; color: var(--text3); }
+.q-note { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); padding: 14px 8px 4px; }
+.q-note svg { width: 14px; height: 14px; }
+
+/* ================= Cài đặt ================= */
+.set-group { margin-bottom: 26px; max-width: 860px; }
+.set-group h2 { font: 700 15px "Segoe UI Variable Display", "Segoe UI"; color: var(--text2); margin: 0 0 10px 4px; }
+.set-card { border-radius: 16px; background: rgba(255, 255, 255, .055); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); overflow: hidden; }
+.set-row { display: flex; align-items: center; gap: 20px; padding: 14px 18px; }
+.set-row + .set-row { border-top: 1px solid var(--line); }
+.set-text { flex: 1; min-width: 0; }
+.set-label { font-weight: 600; }
+.set-hint { font-size: 12.5px; color: var(--text2); margin-top: 3px; line-height: 1.5; }
+.set-path { display: block; font-family: "Cascadia Mono", Consolas, monospace; font-size: 12px; color: var(--text); opacity: .85;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; user-select: text; }
+.set-ctl { display: flex; gap: 8px; align-items: center; flex: none; }
+.keys { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 20px; padding: 16px 18px; }
+.keys div { display: flex; align-items: center; gap: 12px; color: var(--text2); }
+kbd { font: 600 11.5px "Segoe UI"; color: #fff; padding: 3px 8px; border-radius: 6px; background: rgba(255, 255, 255, .12);
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .1); white-space: nowrap; }
+.keys kbd { min-width: 70px; text-align: center; }
+
+/* ================= Màn hình chào ================= */
+.welcome { max-width: 980px; padding-top: 30px; }
+.welcome .greeting { margin-bottom: 10px; }
+.welcome-sub { color: var(--text2); font-size: 15px; margin: 0 0 30px; }
+.welcome-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 30px; }
+.wstep { position: relative; border-radius: 18px; padding: 20px; background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .07);
+         display: flex; flex-direction: column; animation: rowIn .5s var(--ease) both; }
+.wstep:nth-child(2) { animation-delay: 80ms; }
+.wstep:nth-child(3) { animation-delay: 160ms; }
+.wstep h3 { margin: 10px 0 6px; font-size: 16px; }
+.wstep p { margin: 0 0 10px; color: var(--text2); }
+.wstep ul { margin: 0; padding-left: 18px; color: var(--text2); line-height: 1.7; }
+.wnum { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700;
+        background: rgba(var(--accent-rgb), .25); color: #fff; }
+.wact { margin-top: auto; padding-top: 12px; display: flex; justify-content: flex-end; }
+.welcome-input { width: 100%; height: 36px; border-radius: 10px; border: 0; padding: 0 12px; outline: none; user-select: text;
+                 background: rgba(0, 0, 0, .25); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.welcome-input:focus { box-shadow: inset 0 0 0 1.5px rgba(var(--accent-rgb), .8); }

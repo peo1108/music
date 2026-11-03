@@ -36,6 +36,8 @@ let searchTimer = 0;
 $("#search").addEventListener("input", (e) => {
   clearTimeout(searchTimer);
   const q = e.target.value.trim();
+  // Dán link YouTube/SoundCloud -> mở playlist/bài đó thay vì tìm kiếm
+  if (isLink(q)) { go({ name: "link", url: q }); return; }
   searchTimer = setTimeout(() => (q ? go({ name: "search", q }) : go({ name: "home" })), 180);
 });
 $("#openFolder").addEventListener("click", pickFolder);

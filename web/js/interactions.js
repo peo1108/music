@@ -3,6 +3,9 @@
 // ---------- Bấm trong trang ----------
 content.addEventListener("click", (e) => {
   const el = e.target;
+  // Nút của các trang mới (link, tải về, cài đặt...) đăng ký hành động vào ACTIONS
+  const act = el.closest("[data-action]");
+  if (act && ACTIONS[act.dataset.action]) return ACTIONS[act.dataset.action](act, e);
   const sf = el.closest("[data-sfilter]");
   if (sf) { searchState.filter = sf.dataset.sfilter; return renderView(false); }
   if (el.closest("[data-prefer-offline]")) {
