@@ -1,0 +1,24 @@
+# Nhạc tải về / thư viện cá nhân (có bản quyền, không đưa lên git)
+out/
+*.mp3
+*.m4a
+*.opus
+*.ogg
+*.flac
+*.wav
+*.webm
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Build
+build/
+dist/
+*.spec
+
+# Công cụ / editor
+.kilo/
+.vscode/
+.idea/

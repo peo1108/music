@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nhạc</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/player.css">
+</head>
+<body>
+<!-- Bộ lọc khúc xạ của kính lỏng, JS tạo cho từng tấm kính -->
+<svg id="glassDefs" width="0" height="0" aria-hidden="true"></svg>
+
+<!-- Nền: ảnh bìa mờ + các đốm màu trôi chậm -->
+<div class="backdrop">
+  <div class="bgimg" id="bg1"></div><div class="bgimg" id="bg2"></div>
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  <div class="veil"></div>
+</div>
+
+<!-- Nút cửa sổ (thu nhỏ / phóng to / đóng) -->
+<div class="winctl">
+  <button data-win="min" title="Thu nhỏ">&#xE921;</button>
+  <button data-win="max" title="Phóng to">&#xE922;</button>
+  <button data-win="close" class="close" title="Đóng">&#xE8BB;</button>
+</div>
+
+<div class="shell" id="shell">
+  <!-- ---------------- Thanh bên ---------------- -->
+  <aside class="sidebar glass lg" data-bezel="24">
+    <div class="side-top drag">
+      <div class="brand"><span class="logo"></span>Nhạc</div>
+    </div>
+    <label class="search">
+      <i data-ic="search"></i>
+      <input id="search" placeholder="Tìm bài hát, ca sĩ, album…" spellcheck="false">
+    </label>
+    <nav class="side-scroll">
+      <div class="nav-title">Thư viện</div>
+      <a class="nav" data-view="home"><i data-ic="home"></i>Trang chủ</a>
+      <a class="nav" data-view="songs"><i data-ic="note"></i>Bài hát</a>
+      <a class="nav" data-view="albums"><i data-ic="disc"></i>Album</a>
+      <a class="nav" data-view="artists"><i data-ic="mic"></i>Ca sĩ</a>
+      <a class="nav" data-view="playlists"><i data-ic="list"></i>Playlist</a>
+      <a class="nav" data-view="favorites"><i data-ic="heart"></i>Yêu thích</a>
+      <a class="nav" data-view="recent"><i data-ic="clock"></i>Nghe gần đây</a>
+      <div class="nav-title">Thư mục</div>
+      <div id="folderNav"></div>
+      <a class="nav" id="openFolder"><i data-ic="folderPlus"></i>Mở thư mục…</a>
+      <div class="nav-title">Danh sách phát <button class="mini-btn" id="newPlaylist" title="Danh sách mới"><i data-ic="plus"></i></button></div>
+      <div id="playlistNav"></div>
+    </nav>
+  </aside>
+
+  <!-- ---------------- Nội dung chính ---------------- -->
+  <section class="main">
+    <div class="content" id="content"></div>
+
+    <!-- Thanh phát nhạc nổi (kiêm thanh tiêu đề để kéo cửa sổ) -->
+    <header class="toolbar glass lg" data-bezel="22">
+      <div class="bar-drag drag"></div>
+      <div class="transport">
+        <button class="tbtn" id="shuffleBtn" title="Ngẫu nhiên (S)"><i data-ic="shuffle"></i></button>
+        <button class="tbtn big" id="prevBtn" title="Bài trước (P)"><i data-ic="prev"></i></button>
+        <button class="tbtn huge" id="playBtn" title="Phát / Dừng (Space)"><i data-ic="play"></i></button>
+        <button class="tbtn big" id="nextBtn" title="Bài tiếp (N)"><i data-ic="next"></i></button>
+        <button class="tbtn" id="repeatBtn" title="Lặp (R)"><i data-ic="repeat"></i><span class="one">1</span></button>
+      </div>
+
+      <div class="lcd" id="lcd">
+        <canvas class="lcd-viz" id="lcdViz"></canvas>
+        <button class="lcd-art" id="lcdArt" title="Mở màn hình Đang phát (F)"></button>
+        <div class="lcd-body">
+          <div class="lcd-text">
+            <div class="lcd-title" id="lcdTitle">Nhạc</div>
+            <div class="lcd-sub" id="lcdSub">Chọn một bài để bắt đầu</div>
+          </div>
+          <div class="lcd-lyric" id="lcdLyric"></div>
+          <div class="lcd-seek">
+            <span id="lcdCur">0:00</span>
+            <canvas class="wave" id="lcdWave"></canvas>
+            <span id="lcdDur">0:00</span>
+          </div>
+        </div>
+        <button class="lcd-fav" id="lcdFav" title="Yêu thích"><i data-ic="heart"></i></button>
+      </div>
+
+      <div class="tools">
+        <div class="vol">
+          <button class="tbtn sm" id="muteBtn" title="Tắt tiếng (M)"><i data-ic="vol"></i></button>
+          <input type="range" id="volume" min="0" max="100" class="slider vol-input">
+        </div>
+        <button class="tbtn sm" id="lyricsBtn" title="Lời bài hát (L)"><i data-ic="lyrics"></i></button>
+        <button class="tbtn sm" id="queueBtn" title="Tiếp theo (Q)"><i data-ic="queue"></i></button>
+        <button class="tbtn sm" id="soundBtn" title="Âm thanh &amp; hiệu ứng (E)"><i data-ic="sliders"></i></button>
+        <button class="tbtn sm" id="npBtn" title="Màn hình Đang phát (F)"><i data-ic="expand"></i></button>
+      </div>
+    </header>
+  </section>
+
+  <!-- ---------------- Bảng bên phải: Tiếp theo / Lời bài hát ---------------- -->
+  <aside class="rpanel glass lg" id="rpanel" data-bezel="24">
+    <div class="rp-head drag">
+      <div class="seg" id="rpTabs">
+        <button data-tab="queue">Tiếp theo</button>
+        <button data-tab="lyrics">Lời bài hát</button>
+      </div>
+    </div>
+    <div class="rp-body" id="rpQueue"></div>
+    <div class="rp-body lyrics small" id="rpLyrics"></div>
+  </aside>
+</div>
+
+<!-- ---------------- Màn hình Đang phát (toàn cửa sổ) ---------------- -->
+<div class="np" id="np">
+  <canvas class="np-bg" id="npBg"></canvas>
+  <div class="np-veil"></div>
+  <div class="np-top drag">
+    <button class="np-close glass" id="npClose" title="Thu lại (Esc)"><i data-ic="down"></i></button>
+  </div>
+  <div class="np-grid">
+    <div class="np-left">
+      <div class="np-art-wrap">
+        <canvas class="np-ring" id="npRing"></canvas>
+        <div class="np-art" id="npArt"></div>
+      </div>
+      <div class="np-meta">
+        <div class="np-titles">
+          <div class="np-title" id="npTitle"></div>
+          <div class="np-sub" id="npSub"></div>
+        </div>
+        <button class="tbtn" id="npFav" title="Yêu thích"><i data-ic="heart"></i></button>
+        <button class="tbtn" id="npMore" title="Thêm vào danh sách phát, hàng đợi..."><i data-ic="more"></i></button>
+      </div>
+      <div class="np-seek">
+        <canvas class="wave" id="npWave"></canvas>
+        <div class="np-times"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+      </div>
+      <div class="np-ctrl glass lg" data-bezel="26">
+        <button class="tbtn" data-act="shuffle" title="Ngẫu nhiên"><i data-ic="shuffle"></i></button>
+        <button class="tbtn big" data-act="prev"><i data-ic="prev"></i></button>
+        <button class="tbtn huge" data-act="play"><i data-ic="play"></i></button>
+        <button class="tbtn big" data-act="next"><i data-ic="next"></i></button>
+        <button class="tbtn" data-act="repeat" title="Lặp"><i data-ic="repeat"></i><span class="one">1</span></button>
+      </div>
+      <div class="np-extras">
+        <div class="vol">
+          <button class="tbtn sm" id="npMute" title="Tắt tiếng (M)"><i data-ic="vol"></i></button>
+          <input type="range" id="npVolume" min="0" max="100" class="slider vol-input">
+        </div>
+        <button class="tbtn sm" id="npSound" title="Âm thanh &amp; hiệu ứng (E)"><i data-ic="sliders"></i></button>
+      </div>
+    </div>
+    <div class="np-right">
+      <div class="seg" id="npTabs">
+        <button data-tab="lyrics">Lời bài hát</button>
+        <button data-tab="queue">Tiếp theo</button>
+      </div>
+      <div class="lyrics big" id="npLyrics"></div>
+      <div class="np-queue glass lg" id="npQueueWrap" data-bezel="24" hidden>
+        <div class="rp-body" id="npQueue"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------- Bảng âm thanh ---------------- -->
+<div class="pop glass lg" id="sound" hidden data-bezel="22">
+  <div class="pop-head">Âm thanh &amp; hiệu ứng <button class="mini-btn" data-close><i data-ic="x"></i></button></div>
+  <div class="pop-label">Bộ chỉnh âm (EQ)</div>
+  <div class="bands" id="bands"></div>
+  <div class="chips" id="presets"></div>
+  <div class="pop-row">
+    <div><div class="pop-label">Chuyển bài mượt</div><div class="hint" id="xfadeLabel"></div></div>
+    <input type="range" class="slider" id="xfade" min="0" max="12" step="1">
+  </div>
+  <div class="pop-row">
+    <div><div class="pop-label">Hiệu ứng kính lỏng</div><div class="hint">Tắt nếu máy bị chậm</div></div>
+    <label class="switch"><input type="checkbox" id="glassToggle"><span></span></label>
+  </div>
+</div>
+
+<div class="menu glass" id="menu" hidden></div>
+<div class="modal-wrap" id="modal" hidden>
+  <div class="modal glass lg" data-bezel="22">
+    <div class="modal-title" id="modalTitle"></div>
+    <input id="modalInput" spellcheck="false">
+    <div class="modal-actions"><button class="pill" data-modal="cancel">Huỷ</button><button class="pill accent" data-modal="ok">OK</button></div>
+  </div>
+</div>
+<div class="toast glass" id="toast"></div>
+<div class="undo glass" id="undo"><span id="undoText"></span><button id="undoBtn">Hoàn tác</button></div>
+
+<!-- Kéo mép để đổi kích thước cửa sổ -->
+<div class="grip n" data-edge="n"></div><div class="grip s" data-edge="s"></div>
+<div class="grip e" data-edge="e"></div><div class="grip w" data-edge="w"></div>
+<div class="grip ne" data-edge="ne"></div><div class="grip nw" data-edge="nw"></div>
+<div class="grip se" data-edge="se"></div><div class="grip sw" data-edge="sw"></div>
+
+<script src="/player.js"></script>
+</body>
+</html>

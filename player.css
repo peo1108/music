@@ -1,0 +1,491 @@
+:root {
+  --accent-rgb: 255, 77, 109;
+  --accent: rgb(var(--accent-rgb));
+  --c1: 255, 77, 109;
+  --c2: 120, 90, 255;
+  --c3: 40, 170, 255;
+  --text: #fff;
+  --text2: rgba(255, 255, 255, .62);
+  --text3: rgba(255, 255, 255, .38);
+  --hover: rgba(255, 255, 255, .07);
+  --line: rgba(255, 255, 255, .09);
+  --gap: 10px;
+  --r: 22px;
+  --side-w: 250px;
+  --bar-h: 96px;
+  --ease: cubic-bezier(.2, .85, .25, 1);
+  --spring: cubic-bezier(.34, 1.56, .64, 1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: #07080c;
+  color: var(--text);
+  font: 13.5px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input { font: inherit; color: inherit; }
+svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; display: block; }
+svg.ic.fill { fill: currentColor; stroke: none; }
+[hidden] { display: none !important; }
+
+/* Kéo cửa sổ: vùng drag là "thanh tiêu đề" thật của Windows (WebView2 app-region) */
+.drag { app-region: drag; -webkit-app-region: drag; }
+.drag button, .drag input, .drag a, .drag canvas, .drag label, .drag .lcd, .drag .vol, .nodrag { app-region: no-drag; -webkit-app-region: no-drag; }
+/* Vùng kéo vẫn tồn tại dù phần tử trong suốt -> tắt của lớp bên dưới khi màn hình Đang phát đang mở */
+body.np-open .shell .drag { app-region: no-drag; -webkit-app-region: no-drag; }
+
+/* ================= Nền ================= */
+.backdrop { position: fixed; inset: 0; overflow: hidden; }
+.bgimg { position: absolute; inset: -15%; background-size: cover; background-position: center;
+         filter: blur(80px) saturate(1.7) brightness(.62); opacity: 0; transition: opacity 1.4s ease; transform: scale(1.1); }
+.bgimg.on { opacity: 1; }
+.blob { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; filter: blur(90px); opacity: .45; transition: background 1.6s ease; }
+.b1 { background: rgb(var(--c1)); left: -18vmax; top: -22vmax; animation: drift1 38s ease-in-out infinite alternate; }
+.b2 { background: rgb(var(--c2)); right: -22vmax; top: 10vmax; animation: drift2 46s ease-in-out infinite alternate; }
+.b3 { background: rgb(var(--c3)); left: 20vmax; bottom: -30vmax; animation: drift3 52s ease-in-out infinite alternate; }
+@keyframes drift1 { to { transform: translate(18vmax, 12vmax) scale(1.2); } }
+@keyframes drift2 { to { transform: translate(-14vmax, 16vmax) scale(.85); } }
+@keyframes drift3 { to { transform: translate(-10vmax, -14vmax) scale(1.15); } }
+.veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(7, 8, 12, .25), rgba(7, 8, 12, .62)); }
+
+/* ================= Kính lỏng ================= */
+.glass {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .05) 40%, rgba(255, 255, 255, .07));
+  backdrop-filter: blur(22px) saturate(1.8);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, .35),
+    inset 0 -1px 1px rgba(255, 255, 255, .08),
+    inset 0 0 22px rgba(255, 255, 255, .05),
+    0 18px 50px -12px rgba(0, 0, 0, .55);
+}
+/* Viền sáng (ánh đèn hắt lên mép kính) */
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 2;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .7), rgba(255, 255, 255, .12) 28%, rgba(255, 255, 255, 0) 50%,
+                                       rgba(255, 255, 255, .1) 72%, rgba(255, 255, 255, .45));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+/* Vệt sáng chạy theo con trỏ */
+.glass::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(260px circle at var(--mx, -500px) var(--my, -500px), rgba(255, 255, 255, .13), transparent 60%);
+  opacity: 0; transition: opacity .3s;
+}
+.glass:hover::after { opacity: 1; }
+body.noglass .glass { backdrop-filter: blur(26px) saturate(1.5) !important; -webkit-backdrop-filter: blur(26px) saturate(1.5) !important; }
+
+/* ================= Nút cửa sổ ================= */
+.winctl { position: fixed; top: 0; right: 0; z-index: 90; display: flex; height: 40px; }
+.winctl button { width: 46px; height: 40px; font: 10px "Segoe Fluent Icons", "Segoe MDL2 Assets"; color: rgba(255, 255, 255, .85); transition: background .15s; }
+.winctl button:hover { background: rgba(255, 255, 255, .1); }
+.winctl .close:hover { background: #c42b1c; color: #fff; }
+
+/* ================= Bố cục ================= */
+.shell { position: fixed; inset: 0; display: grid; grid-template-columns: var(--side-w) 1fr 0; gap: var(--gap); padding: var(--gap);
+         transition: grid-template-columns .5s var(--ease), opacity .4s, transform .5s var(--ease); }
+body.rp-open .shell { grid-template-columns: var(--side-w) 1fr 330px; }
+body.np-open .shell { opacity: 0; transform: scale(.97); pointer-events: none; }
+
+/* ---------- Thanh bên ---------- */
+.sidebar { border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.side-top { height: 52px; flex: none; display: flex; align-items: center; padding: 0 18px; }
+.brand { display: flex; align-items: center; gap: 10px; font: 650 17px "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.01em; }
+.logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(160deg, #ff6b8b, var(--accent) 50%, #8b5cff);
+        box-shadow: inset 0 1px 1px rgba(255, 255, 255, .5), 0 4px 14px rgba(var(--accent-rgb), .5); position: relative; }
+.logo::after { content: "♪"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; color: #fff; }
+.search { margin: 2px 12px 8px; display: flex; align-items: center; gap: 8px; padding: 0 11px; height: 34px; border-radius: 11px;
+          background: rgba(0, 0, 0, .18); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), inset 0 0 0 1px rgba(255, 255, 255, .06); }
+.search:focus-within { box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), 0 0 0 2px rgba(var(--accent-rgb), .55); }
+.search svg { width: 15px; height: 15px; color: var(--text3); }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; }
+.search input::placeholder { color: var(--text3); }
+.side-scroll { overflow-y: auto; padding: 0 8px 14px; flex: 1; }
+.nav-title { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; font-weight: 600; color: var(--text3);
+             padding: 14px 10px 6px; }
+.nav { display: flex; align-items: center; gap: 11px; padding: 7px 10px; border-radius: 9px; color: rgba(255, 255, 255, .86); cursor: pointer;
+       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .15s, color .15s; }
+.nav svg { width: 17px; height: 17px; color: var(--accent); transition: color .3s; }
+.nav:hover { background: var(--hover); }
+.nav.on { background: rgba(255, 255, 255, .13); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
+.nav .nav-name { overflow: hidden; text-overflow: ellipsis; }
+.mini-btn { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; color: var(--text2); }
+.mini-btn:hover { background: var(--hover); color: #fff; }
+.mini-btn svg { width: 15px; height: 15px; }
+
+/* ---------- Khu nội dung ---------- */
+.main { position: relative; min-width: 0; min-height: 0; }
+.content { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; border-radius: var(--r);
+           padding: calc(var(--bar-h) + 30px) 34px 48px; scroll-behavior: smooth; }
+.content::-webkit-scrollbar, .side-scroll::-webkit-scrollbar, .rp-body::-webkit-scrollbar { width: 10px; }
+.content::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb, .rp-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .14); border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+.content::-webkit-scrollbar-track { margin-top: calc(var(--bar-h) + 16px); }
+
+/* ---------- Thanh phát nổi ---------- */
+.toolbar { position: absolute; top: 0; left: 0; right: 140px; height: var(--bar-h); border-radius: var(--r); z-index: 10;
+           display: flex; align-items: center; gap: 14px; padding: 0 14px; transition: right .5s var(--ease);
+           /* kính nhuốm màu ảnh bìa, cùng chất với màn hình Đang phát */
+           background: linear-gradient(105deg, rgba(var(--c1), .3), rgba(var(--c2), .16) 50%, rgba(var(--c3), .26)),
+                       linear-gradient(160deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .05) 40%, rgba(255, 255, 255, .07)); }
+body.rp-open .toolbar { right: 0; }
+.transport { display: flex; align-items: center; gap: 2px; }
+.tbtn { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: rgba(255, 255, 255, .88); position: relative;
+        transition: transform .35s var(--spring), background .2s, color .2s; }
+.tbtn:hover { background: rgba(255, 255, 255, .1); }
+.tbtn:active { transform: scale(1.18); background: rgba(255, 255, 255, .16); }
+.tbtn.big svg { width: 22px; height: 22px; }
+.tbtn.huge { width: 54px; height: 54px; }
+.tbtn.huge svg { width: 32px; height: 32px; }
+.tbtn.sm svg { width: 17px; height: 17px; }
+.tbtn.on { color: var(--accent); }
+/* Nút bật/tắt: tắt thì mờ, bật thì sáng kèm chấm nhỏ */
+#shuffleBtn, #repeatBtn, [data-act=shuffle], [data-act=repeat] { color: rgba(255, 255, 255, .45); }
+#shuffleBtn.on, #repeatBtn.on, [data-act=shuffle].on, [data-act=repeat].on { color: #fff; }
+#shuffleBtn.on::after, #repeatBtn.on::after, [data-act=shuffle].on::after, [data-act=repeat].on::after {
+  content: ""; position: absolute; bottom: 1px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.tbtn .one { position: absolute; top: 4px; right: 4px; font-size: 9px; font-weight: 800; display: none; }
+.tbtn.one-on .one { display: block; }
+
+.lcd { position: relative; overflow: hidden; flex: 1; min-width: 120px; max-width: 720px; margin: 0 auto; height: 78px; border-radius: 18px; display: flex; align-items: center; gap: 12px;
+       padding: 0 8px 0 7px; background: rgba(0, 0, 0, .22);
+       box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3), inset 0 0 0 1px rgba(255, 255, 255, .07), 0 1px 0 rgba(255, 255, 255, .08); }
+.lcd-viz { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: .5; }
+.lcd-art { position: relative; width: 64px; height: 64px; border-radius: 12px; overflow: hidden; flex: none; background: rgba(255, 255, 255, .08);
+           box-shadow: 0 6px 22px -4px rgba(var(--accent-rgb), .75); display: grid; place-items: center; transition: transform .3s var(--spring); }
+.lcd-art:hover { transform: scale(1.06); }
+.lcd-art img, .np-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lcd-body { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.lcd-text { display: flex; align-items: baseline; gap: 8px; line-height: 1.3; min-width: 0; }
+.lcd-title { font-weight: 700; font-size: 14px; flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd-sub { font-size: 12px; color: var(--text2); flex: 1 1 0; min-width: 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd-lyric { font-size: 12px; font-weight: 600; line-height: 1.35; color: rgba(255, 255, 255, .88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lcd-lyric:empty { display: none; }
+.lcd-seek { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 10.5px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.lcd-seek span { flex: none; }
+.wave { display: block; width: 100%; cursor: pointer; }
+.lcd-seek .wave { flex: 1 1 0; width: 0; min-width: 0; }
+#lcdWave { height: 22px; }
+.lcd-fav { position: relative; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--text3); flex: none; transition: transform .35s var(--spring); }
+.lcd-fav:hover { color: #fff; }
+.lcd-fav:active { transform: scale(1.3); }
+.lcd-fav.on, #npFav.on { color: var(--accent); }
+.transport, .tools { flex: none; }
+.tools { display: flex; align-items: center; gap: 2px; }
+.vol { display: flex; align-items: center; gap: 4px; width: 128px; transition: width .4s var(--ease); }
+/* Thanh phát tự co theo chiều rộng của chính nó */
+/* Tấm kính không thể vừa là vùng kéo vừa chứa nút (WebView2 không khoét được lỗ no-drag trong nó):
+   vùng kéo là lớp nền riêng, các cụm nút nằm trên và đánh dấu no-drag */
+.toolbar { container: bar / inline-size; }
+.bar-drag { position: absolute; inset: 0; border-radius: inherit; }
+.toolbar > .transport, .toolbar > .lcd, .toolbar > .tools { position: relative; app-region: no-drag; -webkit-app-region: no-drag; }
+.lcd { container: lcd / inline-size; }
+@container bar (max-width: 860px) { .vol { width: 96px; } }
+@container bar (max-width: 700px) { .vol { width: 84px; } }
+@container bar (max-width: 640px) { #shuffleBtn, #repeatBtn, #npBtn { display: none; } }
+@container bar (max-width: 520px) { .vol { width: 34px; } .vol .slider { display: none; } }
+@container bar (max-width: 470px) { .lcd { display: none; } .tools { margin-left: auto; } }
+@container lcd (max-width: 230px) { .lcd-seek span, .lcd-fav { display: none; } }
+/* Khung hẹp: tên bài và ca sĩ tách 2 dòng; có câu lời thì câu lời thế chỗ ca sĩ */
+@container lcd (max-width: 400px) {
+  .lcd-text { display: block; }
+  .lcd-sub { line-height: 1.35; }
+  .lcd-body:has(.lcd-lyric:not(:empty)) .lcd-sub { display: none; }
+}
+
+/* ---------- Thanh trượt hạt kính ---------- */
+.slider { -webkit-appearance: none; appearance: none; background: transparent; width: 100%; height: 20px; margin: 0; cursor: pointer; }
+.slider::-webkit-slider-runnable-track { height: 4px; border-radius: 4px;
+  background: linear-gradient(to right, rgba(255, 255, 255, .9) var(--p, 0%), rgba(255, 255, 255, .2) var(--p, 0%)); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; margin-top: -6px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .95), rgba(255, 255, 255, .55) 45%, rgba(255, 255, 255, .25));
+  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, .2), 0 2px 6px rgba(0, 0, 0, .35), 0 0 0 1px rgba(255, 255, 255, .35);
+  transition: transform .3s var(--spring); }
+.slider:hover::-webkit-slider-thumb { transform: scale(1.15); }
+.slider:active::-webkit-slider-thumb { transform: scale(1.45); }
+.slider:focus { outline: none; }
+
+/* ---------- Bảng phải ---------- */
+.rpanel { border-radius: var(--r); display: flex; flex-direction: column; min-height: 0; overflow: hidden; opacity: 0;
+          transition: opacity .35s; }
+body.rp-open .rpanel { opacity: 1; }
+.rp-head { height: 92px; flex: none; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; }
+.seg { display: flex; padding: 3px; border-radius: 11px; background: rgba(0, 0, 0, .2); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25); }
+.seg button { padding: 6px 16px; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--text2); transition: .25s var(--ease); }
+.seg button.on { background: rgba(255, 255, 255, .16); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 2px 8px rgba(0, 0, 0, .25); }
+.rp-body { flex: 1; overflow-y: auto; padding: 4px 10px 20px; }
+.q-head { font-size: 12px; font-weight: 700; color: var(--text3); padding: 12px 8px 6px; display: flex; justify-content: space-between; }
+.q-head button { color: var(--accent); font-weight: 600; }
+.q-item { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 10px; cursor: default; }
+.q-item:hover { background: var(--hover); }
+.q-item.now { background: rgba(255, 255, 255, .1); }
+.q-item.dragging { opacity: .35; }
+.q-item.over { box-shadow: inset 0 2px 0 var(--accent); }
+.q-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.q-item .x { opacity: 0; color: var(--text3); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.q-item:hover .x { opacity: 1; }
+.q-item .x:hover { color: #fff; background: var(--hover); }
+.q-item .x svg { width: 14px; height: 14px; }
+
+/* ================= Các trang ================= */
+.view { animation: viewIn .55s var(--ease) both; }
+@keyframes viewIn { from { opacity: 0; transform: translateY(14px); } }
+.vhead { display: flex; align-items: flex-end; gap: 26px; margin-bottom: 26px; }
+.vhead h1 { font: 750 34px/1.1 "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.025em; margin: 0; }
+.vhead .kind { font-size: 12px; font-weight: 700; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.vhead .by { font-size: 19px; color: var(--accent); font-weight: 600; margin-top: 4px; cursor: pointer; }
+.vhead .stats { color: var(--text2); margin-top: 8px; }
+.vhead .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.pill { white-space: nowrap; }
+.vhead .big-art { width: 230px; height: 230px; border-radius: 16px; flex: none; overflow: hidden; background: rgba(255, 255, 255, .07);
+                  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, .7); display: grid; place-items: center; }
+.vhead .big-art.round { border-radius: 50%; }
+.vhead .big-art img { width: 100%; height: 100%; object-fit: cover; }
+.vhead .big-art svg { width: 64px; height: 64px; color: var(--text3); stroke-width: 1.4; }
+.mosaic { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 100%; }
+.back { display: inline-flex; align-items: center; gap: 4px; color: var(--text2); margin-bottom: 14px; font-weight: 600; }
+.back:hover { color: #fff; }
+.back svg { width: 16px; height: 16px; }
+
+.pill { height: 36px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-weight: 600;
+        background: rgba(255, 255, 255, .1); box-shadow: inset 0 1px 1px rgba(255, 255, 255, .25), inset 0 0 0 1px rgba(255, 255, 255, .08);
+        transition: transform .35s var(--spring), background .2s; }
+.pill:hover { background: rgba(255, 255, 255, .16); }
+.pill:active { transform: scale(1.08); }
+.pill svg { width: 16px; height: 16px; }
+.pill.accent { background: linear-gradient(180deg, rgba(var(--accent-rgb), 1), rgba(var(--accent-rgb), .78)); color: #fff;
+               box-shadow: inset 0 1px 1px rgba(255, 255, 255, .45), 0 8px 24px -6px rgba(var(--accent-rgb), .7); }
+
+.section { margin-bottom: 34px; }
+.section h2 { font: 700 21px "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.015em; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+.greeting { font: 750 38px/1.1 "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.03em; margin: 0 0 28px; }
+.empty { color: var(--text2); padding: 40px 0; text-align: center; line-height: 1.7; }
+.sfilters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+.src-note { color: var(--text2); font-size: 13px; margin: 0 0 18px; }
+.src { display: inline-flex; align-items: center; flex: none; font: 600 10px/1 "Segoe UI"; letter-spacing: .01em;
+       padding: 3px 6px; border-radius: 5px; background: rgba(255, 255, 255, .09); color: var(--text2); }
+.src.yt { background: rgba(255, 72, 72, .16); color: #ff9b9b; }
+.src.sc { background: rgba(255, 145, 40, .16); color: #ffc08a; }
+.src.off { background: rgba(90, 220, 150, .14); color: #8ee8b4; }
+
+/* Lưới thẻ */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 24px 20px; }
+.row-scroll { display: grid; grid-auto-flow: column; grid-auto-columns: 168px; gap: 20px; overflow-x: auto; padding-bottom: 8px; margin: 0 -4px; padding-left: 4px; }
+.row-scroll::-webkit-scrollbar { height: 0; }
+.card { cursor: pointer; animation: rowIn .5s var(--ease) both; animation-delay: calc(min(var(--i, 0), 24) * 22ms); min-width: 0; }
+.card .art { aspect-ratio: 1; border-radius: 12px; overflow: hidden; position: relative; background: rgba(255, 255, 255, .07);
+             box-shadow: 0 14px 34px -14px rgba(0, 0, 0, .7), inset 0 0 0 1px rgba(255, 255, 255, .06); display: grid; place-items: center;
+             transition: transform .45s var(--ease), box-shadow .45s; }
+.card.round .art { border-radius: 50%; }
+.card:hover .art { transform: translateY(-4px) scale(1.02); box-shadow: 0 22px 44px -14px rgba(0, 0, 0, .8); }
+.card .art img { width: 100%; height: 100%; object-fit: cover; }
+.card .art > svg { width: 44px; height: 44px; color: var(--text3); stroke-width: 1.5; }
+.card .cplay { position: absolute; right: 10px; bottom: 10px; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+               opacity: 0; transform: translateY(8px) scale(.9); transition: .35s var(--spring); }
+.card .cplay svg { width: 18px; height: 18px; margin-left: 2px; }
+.card:hover .cplay { opacity: 1; transform: none; }
+.card .ct { margin-top: 9px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .cs { color: var(--text2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.round .ct, .card.round .cs { text-align: center; }
+
+/* Bảng bài hát */
+.songs { display: flex; flex-direction: column; }
+.srow { display: grid; grid-template-columns: 30px 44px minmax(0, 2.2fr) minmax(0, 1.3fr) minmax(0, 1.3fr) 34px 52px; gap: 12px; align-items: center;
+        padding: 6px 10px; border-radius: 10px; cursor: default; animation: rowIn .45s var(--ease) both;
+        animation-delay: calc(min(var(--i, 0), 24) * 16ms); }
+.srow.noalbum { grid-template-columns: 30px 44px minmax(0, 2.4fr) minmax(0, 1.4fr) 34px 52px; }
+.srow:nth-child(even) { background: rgba(255, 255, 255, .025); }
+.srow:hover { background: var(--hover); }
+.srow.now { background: rgba(var(--accent-rgb), .14); }
+.srow.now .st { color: var(--accent); }
+@keyframes rowIn { from { opacity: 0; transform: translateY(8px); } }
+.srow .num { color: var(--text3); text-align: center; font-variant-numeric: tabular-nums; font-size: 12px; position: relative; }
+.srow .num .pbtn { display: none; color: #fff; margin: 0 auto; }
+.srow:hover .num .n { display: none; }
+.srow:hover .num .pbtn { display: grid; }
+.srow .thumb { width: 44px; height: 44px; border-radius: 7px; overflow: hidden; background: rgba(255, 255, 255, .07); display: grid; place-items: center; }
+.srow .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.srow .thumb svg { width: 18px; height: 18px; color: var(--text3); }
+.srow .st { display: flex; align-items: center; gap: 6px; min-width: 0; font-weight: 600; }
+.srow .st .tname { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow .sa, .srow .sb { color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow .sa:hover, .srow .sb:hover { color: #fff; text-decoration: underline; cursor: pointer; }
+.srow .fav { color: var(--text3); opacity: 0; display: grid; place-items: center; transition: transform .35s var(--spring); }
+.srow:hover .fav, .srow .fav.on { opacity: 1; }
+.srow .fav.on { color: var(--accent); }
+.srow .fav:active { transform: scale(1.35); }
+.srow .fav svg { width: 16px; height: 16px; }
+.srow .dur { color: var(--text3); text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.eqbars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+.eqbars i { width: 3px; height: 4px; background: var(--accent); border-radius: 2px; }
+.playing .eqbars i { animation: eqb .9s ease-in-out infinite; }
+.eqbars i:nth-child(2) { animation-delay: -.3s !important; }
+.eqbars i:nth-child(3) { animation-delay: -.6s !important; }
+@keyframes eqb { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+
+.top-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 4px 20px; }
+.top-item { display: grid; grid-template-columns: 22px 48px 1fr auto; gap: 12px; align-items: center; padding: 7px 8px; border-radius: 10px; cursor: pointer;
+            animation: rowIn .45s var(--ease) both; animation-delay: calc(var(--i, 0) * 25ms); }
+.top-item:hover { background: var(--hover); }
+.top-item .rank { font: 700 17px "Segoe UI Variable Display"; color: var(--text3); text-align: center; }
+.top-item .thumb { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; background: rgba(255, 255, 255, .07); display: grid; place-items: center; }
+.top-item .thumb img { width: 100%; height: 100%; object-fit: cover; }
+.top-item .thumb svg { width: 18px; height: 18px; color: var(--text3); }
+.top-item .tt { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-item .ts { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-item .cnt { font-size: 12px; color: var(--text3); }
+
+/* ================= Lời bài hát ================= */
+.lyrics { overflow-y: auto; scroll-behavior: smooth; -webkit-mask: linear-gradient(transparent, #000 12%, #000 80%, transparent); }
+.lyrics::-webkit-scrollbar { width: 0; }
+.lyrics .pad { height: 30%; }
+.lyrics .line { font-weight: 750; letter-spacing: -.015em; color: rgba(255, 255, 255, .32); transform-origin: left center; cursor: pointer;
+                transition: color .5s, transform .6s var(--ease), filter .6s, opacity .5s; filter: blur(var(--b, 0px)); border-radius: 12px; }
+.lyrics .line:hover { color: rgba(255, 255, 255, .6); filter: none; }
+.lyrics .line.on { color: #fff; transform: scale(1.025); filter: none; text-shadow: 0 0 30px rgba(255, 255, 255, .35); }
+.lyrics .line.dots { letter-spacing: .3em; }
+.lyrics.unsynced .line { color: rgba(255, 255, 255, .8); cursor: default; filter: none; }
+.lyrics .msg { color: var(--text2); text-align: center; padding: 40px 20px; font-weight: 500; line-height: 1.7; }
+.lyrics .src { color: var(--text3); font-size: 11.5px; padding: 30px 0 10px; font-weight: 500; }
+.lyrics.small { padding: 0 18px 0 22px; }
+.lyrics.small .line { font-size: 21px; line-height: 1.3; padding: 7px 4px; }
+.lyrics.big .line { font-size: clamp(26px, 3.1vw, 44px); line-height: 1.22; padding: 12px 6px; }
+
+/* ================= Màn hình Đang phát ================= */
+.np { position: fixed; inset: 0; z-index: 60; overflow: hidden; transform: translateY(102%); transition: transform .7s var(--ease); background: #07080c; }
+body.np-open .np { transform: none; }
+.np-bg { position: absolute; inset: 0; width: 100%; height: 100%; filter: blur(42px) saturate(1.5); transform: scale(1.15); }
+.np-veil { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(0, 0, 0, 0), rgba(0, 0, 0, .35)); }
+.np-top { position: absolute; top: 0; left: 0; right: 140px; height: 64px; z-index: 3; display: flex; align-items: center; padding: 0 20px; }
+.np-close { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; transition: transform .35s var(--spring); }
+.np-close:active { transform: scale(1.15); }
+.np-close svg { width: 20px; height: 20px; position: relative; z-index: 3; }
+.np-grid { position: relative; z-index: 2; height: 100%; display: grid; grid-template-columns: minmax(380px, 1fr) 1.15fr; gap: 4vw; padding: 70px 5vw 40px; }
+.np-left { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 0; }
+.np-art-wrap { position: relative; width: min(31vw, 46vh, 440px); aspect-ratio: 1; }
+.np-ring { position: absolute; left: -35%; top: -35%; width: 170%; height: 170%; pointer-events: none; }
+.np-art { position: absolute; inset: 0; border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, .08); display: grid; place-items: center;
+          box-shadow: 0 40px 90px -20px rgba(0, 0, 0, .75), inset 0 0 0 1px rgba(255, 255, 255, .08); transition: transform .8s var(--ease); }
+body.paused .np-art { transform: scale(.9); }
+.np-art > svg { width: 30%; height: 30%; color: var(--text3); stroke-width: 1.3; }
+.np-meta { width: min(31vw, 46vh, 440px); margin-top: 44px; display: flex; align-items: center; gap: 10px; }
+.np-titles { flex: 1; min-width: 0; }
+.np-title { font: 700 22px/1.25 "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.np-sub { color: var(--text2); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.np-seek { width: min(31vw, 46vh, 440px); margin-top: 16px; }
+#npWave { height: 34px; }
+.np-times { display: flex; justify-content: space-between; color: var(--text2); font-size: 11.5px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+.np-ctrl { margin-top: 18px; display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-radius: 999px; }
+.np-ctrl .tbtn { z-index: 3; }
+.np-ctrl .tbtn.huge { width: 56px; height: 56px; }
+.np-ctrl .tbtn.huge svg { width: 32px; height: 32px; }
+.np-extras { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.np-extras .vol { width: 190px; }
+#npSub { cursor: pointer; }
+#npSub:hover { color: #fff; text-decoration: underline; }
+.np-right { min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 0 10px; }
+.np-right .seg { align-self: flex-start; background: rgba(0, 0, 0, .22); }
+.np-right .lyrics { flex: 1; min-height: 0; }
+.np-queue { flex: 1; min-height: 0; border-radius: var(--r); display: flex; flex-direction: column; overflow: hidden;
+            background: linear-gradient(160deg, rgba(14, 15, 24, .58), rgba(14, 15, 24, .42)); }
+.np-queue .rp-body { position: relative; }
+.np-queue .q-head { color: var(--text2); }
+.np-queue .q-head button { color: #fff; }
+
+/* ================= Bảng âm thanh, menu, hộp thoại ================= */
+.pop { position: fixed; top: calc(var(--bar-h) + var(--gap) + 14px); right: 150px; width: 380px; border-radius: 20px; padding: 16px 18px 18px; z-index: 70;
+       animation: popIn .4s var(--spring);
+       background: linear-gradient(160deg, rgba(20, 21, 32, .78), rgba(14, 15, 24, .7)); }
+body.rp-open .pop { right: 350px; }
+.pop > * { position: relative; z-index: 3; }
+@keyframes popIn { from { opacity: 0; transform: translateY(-8px) scale(.96); } }
+.pop-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; font-size: 15px; margin-bottom: 12px; }
+.pop-label { font-weight: 600; font-size: 12.5px; color: var(--text2); }
+.pop-row { display: grid; grid-template-columns: 1fr 150px; gap: 14px; align-items: center; margin-top: 16px; }
+.pop-row .slider { width: 150px; }
+.hint { font-size: 11.5px; color: var(--text3); }
+.bands { display: flex; justify-content: space-between; margin: 10px 0 4px; }
+.band { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 56px; }
+.band .v { font-size: 11px; font-variant-numeric: tabular-nums; height: 14px; }
+.band .f { font-size: 11px; color: var(--text3); }
+.slot { width: 26px; height: 118px; position: relative; }
+.slot input { position: absolute; width: 118px; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(-90deg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chips button { padding: 5px 12px; border-radius: 999px; font-size: 12px; background: rgba(255, 255, 255, .08); color: var(--text2);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); transition: .2s; }
+.chips button:hover { color: #fff; }
+.chips button.on { background: rgba(var(--accent-rgb), .3); color: #fff; }
+.switch { justify-self: end; position: relative; width: 46px; height: 28px; }
+.switch input { opacity: 0; position: absolute; inset: 0; margin: 0; cursor: pointer; z-index: 2; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: rgba(255, 255, 255, .16); transition: .3s; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3); }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+                      box-shadow: 0 2px 6px rgba(0, 0, 0, .35); transition: .35s var(--spring); }
+.switch input:checked + span { background: var(--accent); }
+.switch input:checked + span::after { transform: translateX(18px); }
+
+.menu { position: fixed; z-index: 95; min-width: 220px; padding: 6px; border-radius: 14px; animation: popIn .25s var(--ease);
+        background: linear-gradient(160deg, rgba(40, 42, 54, .78), rgba(26, 28, 38, .82)); }
+.menu > * { position: relative; z-index: 3; }
+.menu .mi { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; white-space: nowrap; }
+.menu .mi:hover { background: rgba(var(--accent-rgb), .85); }
+.menu .mi svg { width: 16px; height: 16px; opacity: .85; }
+.menu .sep { height: 1px; background: var(--line); margin: 5px 6px; }
+.menu .sub-title { font-size: 11px; color: var(--text3); padding: 6px 10px 2px; font-weight: 600; }
+
+.modal-wrap { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: rgba(0, 0, 0, .35); animation: fadeIn .2s; }
+@keyframes fadeIn { from { opacity: 0; } }
+.modal { width: 360px; border-radius: 20px; padding: 18px; animation: popIn .35s var(--spring); }
+.modal > * { position: relative; z-index: 3; }
+.modal-title { font-weight: 700; font-size: 15px; margin-bottom: 12px; }
+.modal input { width: 100%; height: 38px; border-radius: 10px; border: 0; outline: 0; padding: 0 12px; background: rgba(0, 0, 0, .25);
+               box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3), 0 0 0 2px rgba(var(--accent-rgb), .5); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.toast { position: fixed; left: 50%; bottom: 26px; z-index: 110; padding: 9px 18px; border-radius: 999px; font-weight: 600; font-size: 13px;
+         transform: translate(-50%, 20px); opacity: 0; transition: .4s var(--spring); pointer-events: none; }
+.toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+/* Mép đổi kích thước cửa sổ */
+.grip { position: fixed; z-index: 120; app-region: no-drag; -webkit-app-region: no-drag; }
+.grip.n, .grip.s { left: 14px; right: 14px; height: 7px; cursor: ns-resize; }
+.grip.n { top: 0; right: 140px; } .grip.s { bottom: 0; }
+.grip.e, .grip.w { top: 14px; bottom: 14px; width: 7px; cursor: ew-resize; }
+.grip.e { right: 0; top: 40px; } .grip.w { left: 0; }
+.grip.nw, .grip.se, .grip.sw { width: 14px; height: 14px; }
+.grip.ne { width: 8px; height: 8px; }
+.grip.ne { top: 0; right: 0; cursor: nesw-resize; } .grip.sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.grip.nw { top: 0; left: 0; cursor: nwse-resize; } .grip.se { bottom: 0; right: 0; cursor: nwse-resize; }
+body.maxed .grip { display: none; }
+
+@media (max-width: 1100px) {
+  :root { --side-w: 220px; }
+  body.rp-open .shell { grid-template-columns: var(--side-w) 1fr 290px; }
+}
+
+/* ================= Playlist: cover, kéo thả, undo ================= */
+.nav .plcover { width: 22px; height: 22px; border-radius: 6px; overflow: hidden; flex: none; display: grid; place-items: center;
+                background: rgba(255, 255, 255, .07); }
+.nav .plcover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.nav .plcover .pgrid { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 100%; }
+.nav .plcover svg { width: 14px; height: 14px; color: var(--text3); }
+.nav .nav-count { margin-left: auto; flex: none; font-size: 11px; color: var(--text3); font-variant-numeric: tabular-nums; }
+.nav.over { background: rgba(var(--accent-rgb), .2); box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .5); }
+.srow.dragging, .card.dragging { opacity: .35; }
+.srow.over { box-shadow: inset 0 2px 0 var(--accent); }
+.q-tools { display: flex; gap: 8px; padding: 8px 2px 12px; }
+.q-tools .pill { height: 30px; padding: 0 10px; font-size: 12px; }
+.card.sugg .sugg-save { margin-top: 8px; width: 100%; height: 30px; justify-content: center; font-size: 12px; }
+.undo { position: fixed; left: 50%; bottom: 118px; transform: translate(-50%, 18px); z-index: 90;
+        display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 12px; color: #fff;
+        opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s; }
+.undo.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.undo button { color: var(--accent); font-weight: 700; }
+.undo button:hover { text-decoration: underline; }
