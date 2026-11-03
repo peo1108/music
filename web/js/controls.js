@@ -37,6 +37,7 @@ $("#repeatBtn").addEventListener("click", cycleRepeat);
 $("#muteBtn").addEventListener("click", toggleMute);
 $$(".vol-input").forEach((inp) => inp.addEventListener("input", (e) => setVolume(e.target.value / 100)));
 $("#lyricsBtn").addEventListener("click", () => openPanel("lyrics"));
+$("#djBtn").addEventListener("click", () => openPanel("dj"));
 $("#queueBtn").addEventListener("click", () => openPanel("queue"));
 $("#soundBtn").addEventListener("click", () => toggleSound());
 $("#lcdFav").addEventListener("click", () => toggleFav(curPath()));
@@ -50,8 +51,12 @@ $$(".vol").forEach((v) => v.addEventListener("wheel", (e) => { e.preventDefault(
 addEventListener("keydown", (e) => {
   if (!$("#modal").hidden) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); closeNowPlaying(); $("#search").focus(); $("#search").select(); return; }
-  if (e.target.tagName === "INPUT" && e.target.type !== "range") {
-    if (e.key === "Escape") { e.target.value = ""; e.target.blur(); go({ name: "home" }); }
+  // Đang gõ chữ (ô tìm kiếm, khung chat DJ, ô nhập trong Cài đặt): không dùng phím tắt
+  if ((e.target.tagName === "INPUT" && e.target.type !== "range" && e.target.type !== "checkbox") || e.target.tagName === "TEXTAREA") {
+    if (e.key === "Escape") {
+      if (e.target.id === "search") { e.target.value = ""; go({ name: "home" }); }
+      e.target.blur();
+    }
     return;
   }
   if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -65,6 +70,7 @@ addEventListener("keydown", (e) => {
     n: () => next(), p: prev, s: toggleShuffle, r: cycleRepeat, m: toggleMute, e: () => toggleSound(),
     l: () => (document.body.classList.contains("np-open") ? setNpTab("lyrics") : openPanel("lyrics")),
     q: () => (document.body.classList.contains("np-open") ? setNpTab("queue") : openPanel("queue")),
+    d: () => { closeNowPlaying(); openPanel("dj"); },
     f: () => (document.body.classList.contains("np-open") ? closeNowPlaying() : openNowPlaying()),
     escape: () => { if (!menu.hidden) menu.hidden = true; else if (!$("#sound").hidden) toggleSound(false); else closeNowPlaying(); },
   }[k];

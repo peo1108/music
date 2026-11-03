@@ -11,8 +11,12 @@ function openPanel(tab) {
   $$("#rpTabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === rpTab));
   $("#rpQueue").hidden = rpTab !== "queue";
   $("#rpLyrics").hidden = rpTab !== "lyrics";
-  $("#queueBtn").classList.toggle("on", document.body.classList.contains("rp-open") && rpTab === "queue");
-  $("#lyricsBtn").classList.toggle("on", document.body.classList.contains("rp-open") && rpTab === "lyrics");
+  $("#rpDj").hidden = rpTab !== "dj";
+  const isOpen = document.body.classList.contains("rp-open");
+  $("#queueBtn").classList.toggle("on", isOpen && rpTab === "queue");
+  $("#lyricsBtn").classList.toggle("on", isOpen && rpTab === "lyrics");
+  $("#djBtn").classList.toggle("on", isOpen && rpTab === "dj");
+  if (isOpen && rpTab === "dj") { renderDj(); setTimeout(() => $("#djInput").focus(), 60); }
   lyrIdx = -2;
   redraw();
   renderQueue();

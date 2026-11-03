@@ -137,6 +137,7 @@ addEventListener("focus", () => {
 function initApp() {
   pyReady.then(async () => {
     refreshAppInfo();
+    loadDjInfo();
     await checkDeps();
     setTimeout(() => checkUpdate(false), 4000);
   });

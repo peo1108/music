@@ -3,18 +3,26 @@
 Chạy thử:  python player.py [file nhạc]
 Đóng gói:  python build.py  (tạo bộ cài dist/NhacSetup-x.y.z.exe)
 Mở thêm file khi app đang chạy thì file được chuyển sang cửa sổ đang mở (chỉ chạy 1 cửa sổ).
+NhacPlayer.exe --mcp: chạy máy chủ MCP cho DJ (Claude Code gọi), không mở cửa sổ.
 """
+import sys
+
+if __name__ == "__main__" and "--mcp" in sys.argv[1:]:  # trước các import nặng để khởi động nhanh
+    import mcp_server
+    sys.exit(mcp_server.main())
+
 import base64
 import ctypes
 import hashlib
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
-import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,12 +36,16 @@ from mutagen.flac import FLAC, Picture
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4, MP4Cover
 
+import agent
+import blocklist
 import core
 import downloads
 import online
 import updater
 import ytdlp_update
 from core import DATA_DIR, NO_WINDOW, log, read_json, write_json
+
+AGENT_TOKEN = secrets.token_hex(16)  # máy chủ MCP của DJ phải gửi kèm mã này mới gọi được /api/agent/tool
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSET_DIR = getattr(sys, "_MEIPASS", HERE)
@@ -387,6 +399,96 @@ def downloads_action(body):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- công cụ của DJ (mcp_server.py chuyển về đây)
+def fold(text):
+    """Chữ thường, bỏ dấu: so khớp tìm kiếm tiếng Việt."""
+    text = unicodedata.normalize("NFD", str(text or "").lower().replace("đ", "d"))
+    return "".join(c for c in text if unicodedata.category(c) != "Mn")
+
+
+def compact(t):
+    """Bài hát -> dạng gọn cho DJ đọc (ít token)."""
+    d = int(t.get("duration") or 0)
+    return {"uri": t["file"], "title": t.get("title") or "", "artist": t.get("artist") or "",
+            "length": f"{d // 60}:{d % 60:02d}" if d else "", "source": t["file"][:2] if online.is_online(t["file"]) else "may"}
+
+
+def tracks_for(uris):
+    """Mã bài -> thông tin đầy đủ, bỏ bài không tồn tại và bài của ca sĩ bị chặn. Trả về (bài, số bị chặn)."""
+    names = blocklist.load()
+    out, blocked, seen = [], 0, set()
+    for uri in uris or []:
+        if not isinstance(uri, str) or uri in seen:
+            continue
+        seen.add(uri)
+        info = track_info(uri)
+        if not info:
+            continue
+        if blocklist.blocked_by(info, names):
+            blocked += 1
+            continue
+        out.append(info)
+    return out, blocked
+
+
+def run_js(name, args):
+    """Chạy công cụ phía giao diện (hàng đợi, trạng thái nghe nằm trong trang)."""
+    if not window:
+        raise RuntimeError("Cửa sổ app chưa sẵn sàng")
+    return window.evaluate_js(f"agentTool({json.dumps(name)}, {json.dumps(args, ensure_ascii=False)})")
+
+
+def agent_tool(name, args):
+    try:
+        return {"result": _agent_tool(name, args)}
+    except Exception as exc:
+        log.warning("Công cụ DJ %s lỗi: %s", name, exc)
+        return {"error": str(exc)[:300] or "Lỗi"}
+
+
+def _agent_tool(name, args):
+    limit = max(1, min(int(args.get("limit") or 12), 100))
+    if name == "get_context":
+        ctx = run_js("get_context", {}) or {}
+        ctx["blocked"] = blocklist.load()
+        return ctx
+    if name == "search_library":
+        q = fold(args.get("query"))
+        lib = list_folder("")["tracks"]
+        hits = [t for t in lib if q in fold(f'{t["title"]} {t["artist"]} {t["album"]}')] if q else lib
+        return [compact(t) for t in blocklist.filter_tracks(hits)[:limit]]
+    if name == "search_online":
+        found = online.search("sc" if args.get("source") == "sc" else "yt", args.get("query") or "")
+        return [compact(t) for t in blocklist.filter_tracks(found)[:limit]]
+    if name == "related_tracks":
+        return [compact(t) for t in blocklist.filter_tracks(radio_for(args.get("uri") or ""))[:limit]]
+    if name == "get_lyrics":
+        p = args.get("uri") or ""
+        info = online.meta(p) if online.is_online(p) else None
+        data = find_lyrics_for(info, online.cache_key(p) + ".json") if info else (find_lyrics(audio_path(p)) if audio_path(p) else {})
+        text = data.get("plain") or re.sub(r"\[[^\]]*\]", "", data.get("synced") or "")
+        return re.sub(r"\n\s*\n+", "\n", text).strip()[:1500] or "Không tìm thấy lời bài này."
+    if name in ("play_tracks", "save_playlist"):
+        tracks, blocked = tracks_for(args.get("uris"))
+        if not tracks:
+            return {"ok": False, "message": "Không có bài nào phát được" + (f" ({blocked} bài bị chặn)" if blocked else "")}
+        res = run_js(name, {**args, "tracks": tracks}) or {}
+        if blocked:
+            res["blocked"] = blocked
+        return res
+    if name in ("control", "play_playlist"):
+        return run_js(name, args)
+    if name == "block_artist":
+        names = blocklist.add(args.get("name"))
+        run_js("blocklist_changed", {"names": names})
+        return {"ok": True, "blocked": names}
+    if name == "unblock_artist":
+        names = blocklist.remove(args.get("name") or "")
+        run_js("blocklist_changed", {"names": names})
+        return {"ok": True, "blocked": names}
+    raise ValueError(f"Không có công cụ {name}")
+
+
 # ---------------------------------------------------------------- server
 def parse_range(header, size):
     """Header Range -> (start, end, status). 206: đoạn hợp lệ; 416: vượt cuối file;
@@ -527,20 +629,22 @@ class Handler(BaseHTTPRequestHandler):
             src = q.get("src", ["yt"])[0]
             text = q.get("q", [""])[0]
             try:
-                self.send_json(online.search(src, text))
+                self.send_json(blocklist.filter_tracks(online.search(src, text)))
             except Exception as exc:
                 log.warning("Tìm %s lỗi: %s", src, exc)
                 ytdlp_update.on_failure()
                 self.send_json({"error": str(exc)[:400]})
         elif url.path == "/api/link":
             try:
-                self.send_json({"ok": True, **online.open_link(q.get("u", [""])[0])})
+                data = online.open_link(q.get("u", [""])[0])
+                data["tracks"] = blocklist.filter_tracks(data["tracks"])
+                self.send_json({"ok": True, **data})
             except Exception as exc:
                 log.warning("Không đọc được link: %s", exc)
                 self.send_json({"ok": False, "error": str(exc)[:300]})
         elif url.path == "/api/radio":
             try:
-                self.send_json({"ok": True, "tracks": radio_for(p)})
+                self.send_json({"ok": True, "tracks": blocklist.filter_tracks(radio_for(p))})
             except Exception as exc:
                 log.warning("Không lấy được bài liên quan cho %s: %s", p, exc)
                 self.send_json({"ok": False, "error": str(exc)[:300]})
@@ -596,6 +700,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json([x for x in items if x])
             elif url.path == "/api/downloads":
                 self.send_json(downloads_action(json.loads(body)))
+            elif url.path == "/api/agent/tool":
+                if not secrets.compare_digest(self.headers.get("X-Nhac-Agent") or "", AGENT_TOKEN):
+                    log.warning("Từ chối lệnh DJ sai mã")
+                    return self.send_bytes(b"", "text/plain", status=403)
+                req = json.loads(body)
+                self.send_json(agent_tool(req.get("name"), req.get("args") or {}))
             else:
                 self.not_found()
         except ValueError:
@@ -897,6 +1007,51 @@ class Api:
     def log_js(self, msg):
         log.error("JS: %s", str(msg)[:4000])
 
+    # ---- DJ (chat với Claude Code)
+    def agent_info(self):
+        s = load_settings()
+        return {"claude": agent.find_claude() or "", "model": s.get("agentModel", ""),
+                "hasKey": bool(s.get("agentApiKey")), "busy": bool(dj and dj.busy)}
+
+    def agent_send(self, text):
+        s = load_settings()
+        err = dj.send(str(text or "").strip()[:4000], model=s.get("agentModel", ""), api_key=s.get("agentApiKey", ""))
+        return {"ok": err is None, "error": err}
+
+    def agent_cancel(self):
+        dj.cancel()
+
+    def agent_new(self):
+        dj.reset()
+
+    def agent_settings(self, model=None, api_key=None):
+        if model is not None and model in ("", "opus", "sonnet", "haiku"):
+            update_settings(agentModel=model)
+        if api_key is not None:
+            update_settings(agentApiKey=str(api_key).strip())
+        return self.agent_info()
+
+    # ---- danh sách Không bao giờ phát
+    def blocklist_get(self):
+        return blocklist.load()
+
+    def blocklist_add(self, name):
+        return blocklist.add(name)
+
+    def blocklist_remove(self, name):
+        return blocklist.remove(name)
+
+
+dj = None  # agent.Agent, tạo trong main()
+
+
+def dj_emit(event):
+    """Gửi sự kiện của DJ (chữ, đang dùng công cụ, xong, lỗi) cho khung chat."""
+    try:
+        window.evaluate_js(f"agentEvent({json.dumps(event, ensure_ascii=False)})")
+    except Exception:
+        log.warning("Không gửi được sự kiện DJ cho giao diện", exc_info=True)
+
 
 def on_shown():
     hwnd = window.native.Handle.ToInt32()
@@ -967,7 +1122,7 @@ def make_server():
 
 
 def main():
-    global window, pending_open
+    global window, pending_open, dj
     if sys.stdout is None:  # chạy không có console (pythonw / exe)
         sys.stdout = sys.stderr = open(os.devnull, "w", encoding="utf-8")
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -986,6 +1141,7 @@ def main():
     threading.Thread(target=server.serve_forever, name="server", daemon=True).start()
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     pending_open = path
+    dj = agent.Agent(dj_emit, lambda: server.server_address[1], AGENT_TOKEN)
 
     # Cho phép tự phát nhạc khi mở file từ Explorer (chưa có cú bấm nào trong cửa sổ)
     os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (

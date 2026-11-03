@@ -11,7 +11,7 @@ const btn = (action, label, accent = false) => `<button class="pill sm ${accent 
 const KEYS = [
   ["Space", "Phát / dừng"], ["N / P", "Bài tiếp / bài trước"], ["← →", "Tua 5 giây (Shift: 30 giây)"], ["↑ ↓", "Âm lượng"],
   ["S", "Trộn bài"], ["R", "Lặp"], ["M", "Tắt tiếng"], ["F", "Màn hình Đang phát"], ["L", "Lời bài hát"], ["Q", "Hàng đợi"],
-  ["E", "Âm thanh (EQ)"], ["Ctrl + F", "Tìm kiếm"],
+  ["E", "Âm thanh (EQ)"], ["D", "Chat với DJ"], ["Ctrl + F", "Tìm kiếm"],
 ];
 
 // Áp các tuỳ chọn giao diện vào trang
@@ -45,6 +45,21 @@ function settingsHtml() {
         i.frozen ? btn("updateYtdlp", "Cập nhật ngay") : `<span class="set-hint">Chạy từ mã nguồn: pip install -U yt-dlp</span>`),
       setRow("ffmpeg & Deno", `${toolText}<br>Cần để phát YouTube, vẽ dạng sóng và lưu mp3.`,
         missing.length ? (i.winget ? btn("installDeps", "Cài", true) : `<span class="set-hint">Cần winget</span>`) : `<span class="dl-ok">${icon("check")}</span>`),
+    ])
+    + setGroup("DJ (chat chọn nhạc)", [
+      setRow("Claude Code", djInfo && djInfo.claude
+        ? `Đã tìm thấy. DJ dùng gói Claude đang đăng nhập trong Claude Code.<span class="set-path">${esc(djInfo.claude)}</span>`
+        : "Chưa có. Cài Claude Code rồi mở nó, gõ /login để đăng nhập.", djInfo && djInfo.claude ? `<span class="dl-ok">${icon("check")}</span>` : ""),
+      setRow("Model", "Model DJ dùng để suy nghĩ. Để Mặc định là dùng model bạn đang chọn trong Claude Code.",
+        `<select class="set-select" data-agent-model>${[["", "Mặc định"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]
+          .map(([v, l]) => `<option value="${v}" ${(djInfo && djInfo.model) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`),
+      setRow("API key riêng (không bắt buộc)", djInfo && djInfo.hasKey ? "Đang dùng API key đã nhập thay cho gói Claude." : "Cho ai không có gói Claude: dán API key của mình vào đây.",
+        `<input class="set-input" type="password" id="agentKey" placeholder="sk-ant-…" spellcheck="false">${btn("saveAgentKey", "Lưu")}${djInfo && djInfo.hasKey ? btn("clearAgentKey", "Xoá") : ""}`),
+    ])
+    + setGroup("Không bao giờ phát", [
+      `<div class="block-box"><div class="set-hint">Bài của ca sĩ/từ khoá dưới đây bị loại khỏi tìm kiếm, link, tự phát tiếp và mọi thứ DJ mở, kể cả bài hát cùng (feat) và cover.</div>
+        <div class="block-chips">${djBlocked.length ? djBlocked.map((n) => `<span class="block-chip">${esc(n)}<button data-action="unblock" data-name="${esc(n)}" title="Bỏ chặn">${icon("x")}</button></span>`).join("") : `<span class="set-hint">Chưa chặn ai.</span>`}</div>
+        <div class="block-add"><input class="set-input" id="blockInput" placeholder="Tên ca sĩ hoặc từ khoá…" spellcheck="false">${btn("blockAdd", "Chặn")}</div></div>`,
     ])
     + setGroup("Hỗ trợ", [
       setRow("Nhật ký lỗi", "Gửi file trong thư mục này khi báo lỗi.", btn("openLogs", "Mở thư mục")),
@@ -105,7 +120,34 @@ ACTIONS.openData = () => py("open_data");
 ACTIONS.finishWelcome = () => finishWelcome();
 ACTIONS.welcomeLink = () => openWelcomeLink();
 
+// ---------- DJ & danh sách chặn ----------
+async function setAgent(changes) {
+  djInfo = (await py("agent_settings", changes.model ?? null, changes.apiKey ?? null)) || djInfo;
+  renderView(false);
+}
+ACTIONS.saveAgentKey = async () => {
+  const key = ($("#agentKey") || {}).value || "";
+  if (!key.trim()) return toast("Dán API key vào ô trước đã");
+  await setAgent({ apiKey: key });
+  toast("Đã lưu API key cho DJ");
+};
+ACTIONS.clearAgentKey = async () => { await setAgent({ apiKey: "" }); toast("DJ sẽ dùng gói Claude"); };
+async function addBlock() {
+  const input = $("#blockInput");
+  const name = input && input.value.trim();
+  if (!name) return;
+  djBlocked = (await py("blocklist_add", name)) || djBlocked;
+  renderView(false);
+  toast(`Sẽ không bao giờ phát ${name}`);
+}
+ACTIONS.blockAdd = () => addBlock();
+ACTIONS.unblock = async (b) => {
+  djBlocked = (await py("blocklist_remove", b.dataset.name)) || djBlocked;
+  renderView(false);
+};
+
 content.addEventListener("change", (e) => {
+  if (e.target.matches("[data-agent-model]")) return setAgent({ model: e.target.value });
   const key = e.target.dataset && e.target.dataset.setting;
   if (!key) return;
   S.settings[key] = e.target.checked;
@@ -115,4 +157,5 @@ content.addEventListener("change", (e) => {
 });
 content.addEventListener("keydown", (e) => {
   if (e.target.id === "welcomeLink" && e.key === "Enter") openWelcomeLink();
+  if (e.target.id === "blockInput" && e.key === "Enter") addBlock();
 });

@@ -32,6 +32,9 @@ python -m unittest discover -s tests     :: chạy test
 | `online.py` | Tìm kiếm, đọc link playlist, bài liên quan, phát và lưu từ YouTube/SoundCloud qua yt-dlp |
 | `downloads.py` | Hàng tải nhạc về thư viện (2 bài cùng lúc, huỷ, thử lại, nhớ hàng chờ) |
 | `ytdlp_update.py` | Tự cập nhật yt-dlp từ PyPI, không cần phát hành bản app mới |
+| `agent.py` | DJ: chạy Claude Code ngầm (gói Claude của người dùng hoặc API key riêng) cho khung chat chọn nhạc |
+| `mcp_server.py` | Máy chủ MCP (`NhacPlayer.exe --mcp`): công cụ để DJ điều khiển app, không có Bash/sửa file |
+| `blocklist.py` | Danh sách "Không bao giờ phát", lọc ở tìm kiếm, link, tự phát tiếp và DJ |
 | `core.py` | Phiên bản, thư mục dữ liệu, log, tìm ffmpeg/Deno |
 | `updater.py` | Kiểm tra và cài bản mới của app từ GitHub Releases |
 | `web/` | Giao diện: `index.html`, `player.css`, `js/*.js` (nạp theo thứ tự trong `index.html`) |
