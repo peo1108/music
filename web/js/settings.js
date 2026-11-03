@@ -49,6 +49,8 @@ function settingsHtml() {
     + setGroup("Giao diện", [
       setRow("Hiệu ứng kính lỏng", "Tắt nếu máy bị chậm.", switchHtml("glass")),
       setRow("Nền chuyển động", "Đốm màu trôi chậm phía sau. Tốn GPU.", switchHtml("motion")),
+      setRow("Bấm X thì thu xuống khay", "Đóng cửa sổ mà nhạc vẫn chạy. Tắt hẳn: chuột phải biểu tượng Nhạc ở khay → Thoát.",
+        `<label class="switch"><input type="checkbox" data-tray ${trayOn ? "checked" : ""}><span></span></label>`),
     ])
     + setGroup("Cập nhật & công cụ", [
       setRow(`Nhạc ${esc(i.version || "")}`, esc(appStatus.update) || "App tự kiểm tra bản mới mỗi lần mở.", btn("checkUpdate", "Kiểm tra")),
@@ -67,6 +69,12 @@ function settingsHtml() {
       setRow("Đã dùng", djStatsText(), ""),
       setRow("API key riêng (không bắt buộc)", djInfo && djInfo.hasKey ? "Đang dùng API key đã nhập thay cho gói Claude." : "Cho ai không có gói Claude: dán API key của mình vào đây.",
         `<input class="set-input" type="password" id="agentKey" placeholder="sk-ant-…" spellcheck="false">${btn("saveAgentKey", "Lưu")}${djInfo && djInfo.hasKey ? btn("clearAgentKey", "Xoá") : ""}`),
+    ])
+    + setGroup("DJ nhớ gì về bạn", [
+      `<div class="block-box"><div class="set-hint">DJ tự ghi lại khi bạn nói về gu (vd "tao ghét remix TikTok") và dùng cho các lần sau.
+        Ngoài ra DJ còn đọc thói quen tự tính từ nhật ký nghe (xem ở trang Nhìn lại).</div>
+        <div class="mem-list">${djMemory.length ? djMemory.map((n) => `<div class="mem"><span>${esc(n.text)}</span><small>${new Date(n.at * 1000).toLocaleDateString("vi-VN")}</small><button data-action="memForget" data-id="${n.id}" title="Quên ghi chú này">${icon("x")}</button></div>`).join("") : `<span class="set-hint">Chưa ghi nhớ gì. Cứ nói chuyện với DJ là nó tự nhớ.</span>`}</div>
+        <div class="block-add"><input class="set-input" id="memInput" placeholder="Tự thêm, vd: Thích nghe lofi khi học bài" spellcheck="false">${btn("memAdd", "Thêm")}</div></div>`,
     ])
     + setGroup("Không bao giờ phát", [
       `<div class="block-box"><div class="set-hint">Bài của ca sĩ/từ khoá dưới đây bị loại khỏi tìm kiếm, link, tự phát tiếp và mọi thứ DJ mở, kể cả bài hát cùng (feat) và cover.</div>
@@ -158,8 +166,27 @@ ACTIONS.unblock = async (b) => {
   renderView(false);
 };
 
+// ---------- Trí nhớ DJ & khay hệ thống ----------
+let trayOn = true;
+async function addMemory() {
+  const input = $("#memInput");
+  const text = input && input.value.trim();
+  if (!text) return;
+  djMemory = (await py("memory_add", text)) || djMemory;
+  renderView(false);
+}
+ACTIONS.memAdd = () => addMemory();
+ACTIONS.memForget = async (b) => {
+  djMemory = (await py("memory_remove", +b.dataset.id)) || djMemory;
+  renderView(false);
+};
+
 content.addEventListener("change", (e) => {
   if (e.target.matches("[data-agent-model]")) return setAgent({ model: e.target.value });
+  if (e.target.matches("[data-tray]")) {
+    py("tray_setting", e.target.checked).then((v) => { trayOn = v !== false; });
+    return;
+  }
   const key = e.target.dataset && e.target.dataset.setting;
   if (!key) return;
   S.settings[key] = e.target.checked;
@@ -170,4 +197,5 @@ content.addEventListener("change", (e) => {
 content.addEventListener("keydown", (e) => {
   if (e.target.id === "welcomeLink" && e.key === "Enter") openWelcomeLink();
   if (e.target.id === "blockInput" && e.key === "Enter") addBlock();
+  if (e.target.id === "memInput" && e.key === "Enter") addMemory();
 });

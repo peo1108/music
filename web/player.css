@@ -674,3 +674,74 @@ kbd { font: 600 11.5px "Segoe UI"; color: #fff; padding: 3px 8px; border-radius:
 .dj-usage-detail div { display: flex; justify-content: space-between; gap: 8px; }
 .dj-usage-detail b { color: var(--text2); font-variant-numeric: tabular-nums; }
 .dj-usage-detail p { grid-column: 1 / -1; margin: 4px 0 0; line-height: 1.45; }
+
+/* ================= DJ: danh sách bài trong thẻ + 👍👎, ngăn cách phiên cũ ================= */
+.dj-card { grid-template-columns: 52px 1fr auto; }
+.dj-tracks { grid-column: 1 / -1; font-size: 12px; }
+.dj-tracks summary { list-style: none; cursor: pointer; color: var(--text2); font-weight: 600; padding: 2px 2px 0; }
+.dj-tracks summary::-webkit-details-marker { display: none; }
+.dj-tracks[open] summary { margin-bottom: 6px; }
+.dj-tr { display: grid; grid-template-columns: 1fr 26px 26px; align-items: center; gap: 2px; border-radius: 8px; }
+.dj-tr:hover { background: rgba(255, 255, 255, .06); }
+.dj-tr.now .dj-tr-t b { color: var(--accent); }
+.dj-tr-t { text-align: left; min-width: 0; padding: 4px 6px; }
+.dj-tr-t b, .dj-tr-t small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dj-tr-t small { color: var(--text3); font-size: 11px; }
+.fb { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--text3); }
+.fb svg { width: 14px; height: 14px; }
+.fb:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.fb.on { color: rgb(120, 220, 150); }
+.fb.down.on { color: #ff8a8a; }
+.dj-sep { align-self: center; font-size: 11px; color: var(--text3); padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, .06); }
+
+/* ================= Hẹn giờ tắt nhạc ================= */
+.sleep-chip { width: auto; padding: 0 9px; gap: 4px; display: inline-flex; border-radius: 999px; background: rgba(255, 255, 255, .1); }
+.sleep-chip span { font-size: 11.5px; font-weight: 700; }
+.sleep-chip svg { width: 15px; height: 15px; }
+#sleepChips button.on { background: rgba(var(--accent-rgb), .3); color: #fff; }
+
+/* ================= Trí nhớ DJ (Cài đặt) ================= */
+.mem-list { display: flex; flex-direction: column; gap: 6px; }
+.mem { display: grid; grid-template-columns: 1fr auto 24px; gap: 10px; align-items: center; padding: 8px 8px 8px 12px; border-radius: 10px;
+       background: rgba(255, 255, 255, .06); }
+.mem small { color: var(--text3); font-size: 11px; }
+.mem button { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--text3); }
+.mem button:hover { color: #fff; background: rgba(255, 255, 255, .12); }
+.mem svg { width: 12px; height: 12px; }
+
+/* ================= Nhìn lại ================= */
+.persona { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.persona-card { display: flex; gap: 12px; align-items: center; padding: 14px 16px; border-radius: 16px; animation: rowIn .45s var(--ease) both;
+                background: linear-gradient(135deg, rgba(var(--accent-rgb), .28), rgba(var(--c2), .16)); }
+.persona-card .pe { font-size: 28px; }
+.persona-card b { display: block; font-size: 15px; }
+.persona-card small { color: var(--text2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 22px; }
+.tile { padding: 14px 16px; border-radius: 16px; background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06);
+        animation: rowIn .45s var(--ease) both; animation-delay: calc(var(--i) * 40ms); }
+.tile b { display: block; font: 750 22px/1.2 "Segoe UI Variable Display", "Segoe UI"; letter-spacing: -.02em; }
+.tile span { color: var(--text2); font-size: 12px; }
+.recap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin-bottom: 30px; }
+.recap-card { padding: 16px 18px; border-radius: 18px; background: rgba(255, 255, 255, .055); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .06); min-width: 0; }
+.recap-card h2 { display: flex; align-items: center; justify-content: space-between; font-size: 16px; margin: 0 0 12px; }
+.rk { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; align-items: center; padding: 6px 6px; border-radius: 9px; cursor: pointer; }
+.rk:hover { background: var(--hover); }
+.rk-n { color: var(--text3); font-weight: 700; text-align: center; }
+.rk-t { min-width: 0; }
+.rk-t b, .rk-t small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rk-t small, .rk-v { color: var(--text2); font-size: 12px; }
+.ab { display: grid; grid-template-columns: minmax(80px, 140px) 1fr auto; gap: 10px; align-items: center; margin: 7px 0; font-size: 12.5px; }
+.ab-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.ab-bar { height: 8px; border-radius: 8px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+.ab-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(var(--accent-rgb), 1), rgba(var(--c2), 1)); }
+.ab-v { color: var(--text2); font-size: 12px; white-space: nowrap; }
+.hours { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-top: 6px; }
+.hours i { flex: 1; border-radius: 4px 4px 2px 2px; background: rgba(255, 255, 255, .22); min-height: 3px; }
+.hours i.peak { background: var(--accent); }
+.hours-x { display: flex; justify-content: space-between; color: var(--text3); font-size: 11px; margin-top: 4px; }
+.recap-note { color: var(--text2); font-size: 12.5px; margin: 10px 0 0; line-height: 1.5; }
+.stack { display: flex; height: 14px; border-radius: 8px; overflow: hidden; background: rgba(255, 255, 255, .06); }
+.stack i { display: block; height: 100%; }
+.s-yt { background: rgb(255, 90, 90); } .s-sc { background: rgb(255, 150, 60); } .s-local { background: rgb(120, 170, 255); }
+.stack-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--text2); }
+.stack-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }

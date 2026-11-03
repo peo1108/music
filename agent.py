@@ -41,9 +41,20 @@ bài SoundCloud nếu tìm được bài hợp (đừng nhét bài không hợp 
 hướng thì dùng mode after_current để không cắt ngang bài đang phát.
 5. Trả lời 1-2 câu kiểu DJ dẫn chương trình, nói tên buổi nghe. Không liệt kê mã bài (uri), không dán danh sách dài.
 
+Hiểu gu người dùng (trong get_context):
+- habits: thói quen tự tính từ nhật ký nghe. Ưu tiên ca sĩ/kiểu nhạc hợp khung giờ hiện tại (nowSlot, bySlot), \
+có thể chèn 1-2 bài "hotNow" (đang nghiện) hoặc "coreTracks" (bài ruột). Tránh bài trong oftenSkipped/disliked và \
+hạn chế ca sĩ trong oftenSkippedArtists. djSkipRate cao nghĩa là bài bạn chọn trước đây hay bị bỏ qua: bám gu sát hơn.
+- memory: ghi nhớ dài hạn. Luôn tôn trọng (vd "ghét remix TikTok" thì không chọn remix TikTok).
+- Khi người dùng nói ra sở thích/thói quen lâu dài (thích/ghét/hay nghe gì lúc nào...), gọi remember với 1 câu ngắn; \
+nói "quên cái đó đi"/"không đúng nữa" thì forget. Không ghi tâm trạng nhất thời ("hôm nay buồn"). Ghi xong không \
+cần khoe dài, chỉ nhắc 1 câu kiểu "nhớ rồi nha".
+- Có thể set_volume khi được nhờ chỉnh tiếng, sleep_timer khi người dùng sắp ngủ hoặc nhờ hẹn giờ tắt.
+
 Quy tắc chọn bài:
 - TUYỆT ĐỐI không chọn bài của ca sĩ trong danh sách chặn, kể cả bài họ hát cùng (feat/x), bài cover hay remix \
-bài của họ. Người dùng nói ghét/không nghe ai thì gọi block_artist.
+bài của họ. Người dùng nói ghét/không nghe một CA SĨ thì gọi block_artist; ghét một KIỂU nhạc (remix TikTok, EDM...) \
+thì chỉ remember, không block. Đừng tự nhắc tới danh sách chặn khi người dùng không hỏi.
 - Không lặp một bài (kể cả bản upload khác của cùng bài). Ưu tiên bản chính thức (Official MV/Audio/Lyric).
 - Tránh video tổng hợp/mix dài hơn 10 phút trừ khi được yêu cầu.
 - Chỉ dùng uri lấy từ kết quả công cụ, không tự bịa.
@@ -88,13 +99,22 @@ TOOL_LABELS = {
     "play_playlist": "Mở playlist",
     "block_artist": "Chặn",
     "unblock_artist": "Bỏ chặn",
+    "set_volume": "Chỉnh âm lượng",
+    "sleep_timer": "Hẹn giờ tắt nhạc",
+    "remember": "Ghi nhớ",
+    "forget": "Xoá ghi nhớ",
 }
 
 
 def tool_label(name, args):
     short = name.split("__")[-1]
     label = TOOL_LABELS.get(short, short).format(src="SoundCloud" if (args or {}).get("source") == "sc" else "YouTube")
-    detail = (args or {}).get("query") or (args or {}).get("name") or (args or {}).get("title") or ""
+    a = args or {}
+    detail = a.get("query") or a.get("name") or a.get("title") or a.get("note") or ""
+    if not detail and short == "set_volume":
+        detail = f'{a.get("percent")}%'
+    if not detail and short == "sleep_timer":
+        detail = "hết bài này" if a.get("end_of_track") else (f'{a.get("minutes")} phút' if a.get("minutes") else "huỷ")
     return f"{label}: {detail}" if detail else label
 
 

@@ -35,6 +35,8 @@ python -m unittest discover -s tests     :: chạy test
 | `agent.py` | DJ: chạy Claude Code ngầm (gói Claude của người dùng hoặc API key riêng) cho khung chat chọn nhạc |
 | `mcp_server.py` | Máy chủ MCP (`NhacPlayer.exe --mcp`): công cụ để DJ điều khiển app, không có Bash/sửa file |
 | `blocklist.py` | Danh sách "Không bao giờ phát", lọc ở tìm kiếm, link, tự phát tiếp và DJ |
+| `habits.py` | Nhật ký nghe, 👍/👎, hồ sơ gu tự tính (khung giờ, đang nghiện, hay bỏ qua) cho DJ và trang Nhìn lại |
+| `djmemory.py` | Trí nhớ dài hạn của DJ (ghi chú về gu người dùng tự nói ra khi chat) |
 | `core.py` | Phiên bản, thư mục dữ liệu, log, tìm ffmpeg/Deno |
 | `updater.py` | Kiểm tra và cài bản mới của app từ GitHub Releases |
 | `web/` | Giao diện: `index.html`, `player.css`, `js/*.js` (nạp theo thứ tự trong `index.html`) |

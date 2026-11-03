@@ -84,11 +84,22 @@ function djMsgHtml(m, i) {
   if (m.role === "tool") return `<div class="dj-step">${icon("spark")}${esc(m.text)}</div>`;
   if (m.role === "error") return `<div class="dj-msg err">${esc(m.text)}</div>`;
   if (m.role === "usage") return usageHtml(m);
+  if (m.role === "sep") return `<div class="dj-sep">${esc(m.text)}</div>`;
   if (m.role === "play") {
+    const rows = m.uris.map((u) => {
+      const t = T(u);
+      if (!t) return "";
+      const fb = feedbackOf(u);
+      return `<div class="dj-tr ${u === curPath() ? "now" : ""}"><button class="dj-tr-t" data-dj-play="${esc(u)}" data-card="${i}" title="Phát từ bài này">
+        <b>${esc(t.title)}</b><small>${esc(artistOf(t))}${isOnline(u) ? ` · ${u.startsWith("sc:") ? "SoundCloud" : "YouTube"}` : ""}</small></button>
+        <button class="fb ${fb === 1 ? "on" : ""}" data-fb="1" data-p="${esc(u)}" title="Hợp gu">${icon("thumbUp")}</button>
+        <button class="fb down ${fb === -1 ? "on" : ""}" data-fb="-1" data-p="${esc(u)}" title="Không hợp gu, DJ sẽ tránh">${icon("thumbDown")}</button></div>`;
+    }).join("");
     return `<div class="dj-card"><div class="dj-card-art">${playlistCover(m.uris.map(T).filter(Boolean))}</div>
       <div class="dj-card-body"><div class="dj-card-kind">${esc(m.kind)}</div><div class="dj-card-title">${esc(m.title)}</div>
       <div class="dj-card-sub">${m.uris.length} bài</div></div>
-      <button class="pill sm" data-dj-save="${i}" title="Lưu thành playlist">${icon("plus")}Lưu</button></div>`;
+      <button class="pill sm" data-dj-save="${i}" title="Lưu thành playlist">${icon("plus")}Lưu</button>
+      <details class="dj-tracks" ${m.open ? "open" : ""} data-card="${i}"><summary>Xem bài & chấm 👍👎</summary>${rows}</details></div>`;
   }
   return "";
 }
@@ -103,10 +114,22 @@ function renderDj() {
       ${ready ? `<div class="dj-chips">${djSuggestions().map((s) => `<button data-dj-ask="${esc(s)}">${esc(s)}</button>`).join("")}</div>` : ""}</div>`;
   } else html = djMsgs.map(djMsgHtml).join("");
   if (djBusy) html += `<div class="dj-typing"><span class="dots"><i></i><i></i><i></i></span>DJ đang chọn nhạc…<button data-dj-stop>Dừng</button></div>`;
+  const keep = box.scrollTop;
   box.innerHTML = html;
-  box.scrollTop = box.scrollHeight;
+  // Có tin mới thì cuộn xuống cuối; chỉ vẽ lại (chấm 👍👎...) thì giữ nguyên chỗ đang xem
+  const grew = djMsgs.length !== djRenderedCount || djBusy;
+  djRenderedCount = djMsgs.length;
+  box.scrollTop = grew ? box.scrollHeight : keep;
   $("#djSend").disabled = djBusy;
 }
+let djRenderedCount = -1;
+// Nhớ thẻ nào đang mở danh sách bài để vẽ lại không bị đóng
+$("#rpDj").addEventListener("toggle", (e) => {
+  if (e.target.matches && e.target.matches("details.dj-tracks")) {
+    const m = djMsgs[+e.target.dataset.card];
+    if (m) m.open = e.target.open;
+  }
+}, true);
 
 // ---------- Gửi tin ----------
 async function djSend(text) {
@@ -131,11 +154,28 @@ window.agentEvent = (ev) => {
   else if (ev.type === "error") djMsgs.push({ role: "error", text: ev.text });
   else if (ev.type === "usage") { djMsgs.push({ role: "usage", ...ev }); recordUsage(ev); }
   else if (ev.type === "limits") djLimits = ev;
-  else if (ev.type === "done") djBusy = false;
+  else if (ev.type === "done") { djBusy = false; if (ev.session) djSessionId = ev.session; }
   renderDj();
   renderDjTop();
+  if (ev.type !== "limits") persistDj();
   if (ev.type === "usage" && view.name === "settings") renderView(false);
 };
+
+// ---------- Nhớ cuộc trò chuyện qua các lần mở app ----------
+let djSessionId = null;
+let djMemory = [];
+function persistDj() {
+  S.dj = { session: djSessionId, msgs: djMsgs.slice(-80).map(({ open, ...m }) => m) };
+  save();
+}
+function restoreDj() {
+  const saved = S.dj;
+  if (!saved || !saved.msgs || !saved.msgs.length) return;
+  djMsgs.push(...saved.msgs.filter((m) => m.role !== "sep").slice(-60), { role: "sep", text: "Lần trước · gõ tiếp để nói chuyện tiếp" });
+  djSessionId = saved.session || null;
+  if (djSessionId) py("agent_restore", djSessionId);
+  ensureKnown(saved.msgs.filter((m) => m.role === "play").flatMap((m) => m.uris)).then(renderDj);
+}
 
 // ---------- Công cụ phía giao diện mà DJ gọi ----------
 const trackLine = (t) => (t ? { uri: t.file, title: t.title, artist: artistOf(t) } : null);
@@ -160,11 +200,15 @@ const AGENT_TOOLS = {
       playlists: S.playlists.map((p) => ({ name: p.name, tracks: p.tracks.length })),
       librarySize: library.length,
       settings: { repeat: S.settings.repeat, shuffle: S.settings.shuffle, autoplay: S.settings.autoplay !== false },
+      position: curPath() ? `${fmt(cur().el.currentTime || 0)} / ${fmt(duration())}` : null,
+      volume: S.settings.muted ? 0 : Math.round(S.settings.volume * 100),
+      sleepTimer: sleepAt ? `${sleepLeftMin()} phút nữa` : sleepAfterTrack ? "hết bài này" : null,
     };
   },
   play_tracks({ tracks, mode = "replace", title = "" }) {
     rememberTracks(tracks);
     const uris = tracks.map((t) => t.file);
+    uris.forEach((u) => djPicked.add(u)); // nhật ký nghe ghi đây là bài DJ chọn
     let kind = "Đang phát";
     if (mode === "append" && curPath()) {
       Q.push(...uris);
@@ -209,6 +253,19 @@ const AGENT_TOOLS = {
     playList(list, 0, { shuffle });
     return { ok: true, name: pl.name, tracks: list.length };
   },
+  set_volume({ percent }) {
+    setVolume(clamp(+percent || 0, 0, 100) / 100);
+    toast(`Âm lượng ${Math.round(S.settings.volume * 100)}%`);
+    return { ok: true, volume: Math.round(S.settings.volume * 100) };
+  },
+  sleep_timer({ minutes = 0, end_of_track = false }) {
+    return setSleep(+minutes || 0, !!end_of_track);
+  },
+  memory_changed({ notes }) {
+    djMemory = notes || [];
+    if (view.name === "settings") renderView(false);
+    return { ok: true };
+  },
   blocklist_changed({ names }) {
     djBlocked = names || [];
     if (view.name === "settings") renderView(false);
@@ -234,9 +291,19 @@ $("#rpDj").addEventListener("click", async (e) => {
     await py("agent_new");
     djMsgs.length = 0;
     djBusy = false;
+    djSessionId = null;
+    persistDj();
     renderDj();
     $("#djInput").focus();
     return;
+  }
+  const fb = e.target.closest("[data-fb]");
+  if (fb) { e.preventDefault(); return setFeedback(fb.dataset.p, +fb.dataset.fb); }
+  const pl = e.target.closest("[data-dj-play]");
+  if (pl) {
+    const m = djMsgs[+pl.dataset.card];
+    const list = m.uris.filter(T);
+    return playList(list, Math.max(0, list.indexOf(pl.dataset.djPlay)));
   }
   const sv = e.target.closest("[data-dj-save]");
   if (sv) {
@@ -266,9 +333,14 @@ function djHomeHtml() {
 ACTIONS.djAsk = (b) => djSend(b.dataset.text);
 
 // ---------- Thông tin DJ & danh sách chặn (cho trang Cài đặt) ----------
+let djRestored = false;
 async function loadDjInfo() {
+  if (!djRestored) { djRestored = true; restoreDj(); }
   djInfo = await py("agent_info");
   djBlocked = (await py("blocklist_get")) || [];
+  djMemory = (await py("memory_get")) || [];
+  trayOn = (await py("tray_setting")) !== false;
+  loadFeedback().then(renderDj);
   if (djInfo && djInfo.limits) djLimits = djInfo.limits;
   renderDj();
   renderDjTop();

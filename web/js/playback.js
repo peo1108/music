@@ -121,6 +121,14 @@ function nextIndex(auto) {
   return null;
 }
 function next(auto = false) {
+  if (auto && sleepAfterTrack) { // hẹn "tắt khi hết bài này"
+    sleepAfterTrack = false;
+    syncSleep();
+    pause(0.2);
+    cur().el.currentTime = 0;
+    toast("Hết bài rồi, tắt nhạc nha. Ngủ ngon 🌙", 5000);
+    return;
+  }
   const n = nextIndex(auto);
   if (n === null) {
     const stop = () => { pause(); cur().el.currentTime = 0; };
@@ -157,7 +165,7 @@ const duration = () => {
 let xfading = false;
 function audioTick() {
   const d = cur(), el = d.el, xf = S.settings.crossfade;
-  if (intendPlay && !xfading && xf > 0 && S.settings.repeat !== "one" && isFinite(el.duration) && el.duration > xf * 3) {
+  if (intendPlay && !xfading && !sleepAfterTrack && xf > 0 && S.settings.repeat !== "one" && isFinite(el.duration) && el.duration > xf * 3) {
     if (el.duration - el.currentTime <= xf) {
       const n = nextIndex(true);
       if (n !== null) {

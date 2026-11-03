@@ -64,6 +64,10 @@ function trackMenu(p, x, y, removable) {
   if (djInfo && djInfo.claude) {
     items.push("-", { ic: "dj", label: "Nhờ DJ mở nhạc giống bài này", run: () => djSend(`Mở nhạc giống bài "${t.title}" của ${artistOf(t)}`) });
   }
+  const fb = feedbackOf(p);
+  items.push("-",
+    { ic: "thumbUp", label: fb === 1 ? "Bỏ đánh giá hợp gu" : "Hợp gu (DJ chọn nhiều hơn)", run: () => setFeedback(p, 1) },
+    { ic: "thumbDown", label: fb === -1 ? "Bỏ đánh giá không hợp" : "Không hợp gu (DJ sẽ tránh)", run: () => setFeedback(p, -1) });
   if (t.artist) {
     items.push({ ic: "x", label: `Chặn ${artistOf(t)}`, run: async () => {
       djBlocked = (await py("blocklist_add", artistOf(t))) || djBlocked;

@@ -20,8 +20,10 @@ def _obj(props, required=()):
 URIS = {"type": "array", "items": {"type": "string"}, "description": "Mã bài (uri) lấy từ kết quả các công cụ khác"}
 TOOLS = [
     {"name": "get_context",
-     "description": "Bối cảnh nghe nhạc: giờ hiện tại, bài đang phát, hàng đợi sắp tới, gu nghe (ca sĩ/bài nghe nhiều, "
-                    "yêu thích, nghe gần đây), các playlist, danh sách chặn. Gọi đầu tiên khi cần chọn nhạc.",
+     "description": "Bối cảnh nghe nhạc: giờ hiện tại, bài đang phát, hàng đợi, âm lượng, gu nghe (ca sĩ/bài nghe "
+                    "nhiều, yêu thích, nghe gần đây), habits (thói quen tự tính từ nhật ký nghe: theo khung giờ, đang "
+                    "nghiện, bài ruột, hay bỏ qua, 👍/👎), memory (ghi nhớ dài hạn), playlist, danh sách chặn. "
+                    "Gọi đầu tiên khi cần chọn nhạc.",
      "inputSchema": _obj({})},
     {"name": "search_library",
      "description": "Tìm bài trong thư viện nhạc trên máy theo tên bài/ca sĩ/album. Bỏ trống query để lấy cả thư viện.",
@@ -46,6 +48,20 @@ TOOLS = [
     {"name": "control",
      "description": "Điều khiển trình phát: pause, resume, next, previous.",
      "inputSchema": _obj({"action": {"type": "string", "enum": ["pause", "resume", "next", "previous"]}}, ["action"])},
+    {"name": "set_volume",
+     "description": "Đặt âm lượng (0-100). Người dùng nói 'nhỏ/to lên chút' thì đổi khoảng 10-15 so với hiện tại.",
+     "inputSchema": _obj({"percent": {"type": "integer", "minimum": 0, "maximum": 100}}, ["percent"])},
+    {"name": "sleep_timer",
+     "description": "Hẹn giờ tắt nhạc (nhạc nhỏ dần rồi dừng). minutes=0 để huỷ; end_of_track=true để dừng sau bài đang phát.",
+     "inputSchema": _obj({"minutes": {"type": "integer", "minimum": 0, "maximum": 600},
+                          "end_of_track": {"type": "boolean"}})},
+    {"name": "remember",
+     "description": "Ghi nhớ lâu dài 1 sở thích/thói quen người dùng vừa nói ra (câu ngắn, ngôi thứ ba, vd 'Ghét nhạc "
+                    "remix TikTok', 'Tối thứ 6 hay nghe nhạc quẩy'). Không ghi tâm trạng nhất thời, không ghi trùng.",
+     "inputSchema": _obj({"note": {"type": "string"}}, ["note"])},
+    {"name": "forget",
+     "description": "Xoá 1 ghi nhớ không còn đúng (id lấy từ memory trong get_context).",
+     "inputSchema": _obj({"id": {"type": "integer"}}, ["id"])},
     {"name": "save_playlist",
      "description": "Lưu danh sách bài thành playlist trong app.",
      "inputSchema": _obj({"name": {"type": "string"}, "uris": URIS}, ["name", "uris"])},

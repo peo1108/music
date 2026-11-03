@@ -39,7 +39,9 @@ from mutagen.mp4 import MP4, MP4Cover
 import agent
 import blocklist
 import core
+import djmemory
 import downloads
+import habits
 import online
 import updater
 import ytdlp_update
@@ -451,7 +453,19 @@ def _agent_tool(name, args):
     if name == "get_context":
         ctx = run_js("get_context", {}) or {}
         ctx["blocked"] = blocklist.load()
+        ctx["habits"] = habits.profile()
+        ctx["memory"] = djmemory.for_prompt()
         return ctx
+    if name == "remember":
+        notes = djmemory.add(args.get("note"))
+        run_js("memory_changed", {"notes": notes})
+        return {"ok": True, "memory": djmemory.for_prompt()}
+    if name == "forget":
+        notes = djmemory.remove(args.get("id") or 0)
+        run_js("memory_changed", {"notes": notes})
+        return {"ok": True, "memory": djmemory.for_prompt()}
+    if name in ("set_volume", "sleep_timer"):
+        return run_js(name, args)
     if name == "search_library":
         q = fold(args.get("query"))
         lib = list_folder("")["tracks"]
@@ -650,6 +664,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)[:300]})
         elif url.path == "/api/downloads":
             self.send_json(downloads.snapshot())
+        elif url.path == "/api/habits":
+            days = max(1, min(int(q.get("days", ["30"])[0] or 30), 120))
+            self.send_json(habits.public_stats(days))
+        elif url.path == "/api/history/feedback":
+            self.send_json(habits.feedback())
         elif url.path == "/api/prepare":
             try:
                 if not online.is_online(p):
@@ -700,6 +719,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json([x for x in items if x])
             elif url.path == "/api/downloads":
                 self.send_json(downloads_action(json.loads(body)))
+            elif url.path == "/api/history/log":
+                self.send_json({"ok": True, "saved": habits.log_plays(json.loads(body))})
+            elif url.path == "/api/history/feedback":
+                req = json.loads(body)
+                self.send_json(habits.set_feedback(str(req.get("uri") or ""), int(req.get("v") or 0),
+                                                   req.get("title", ""), req.get("artist", "")))
             elif url.path == "/api/agent/tool":
                 if not secrets.compare_digest(self.headers.get("X-Nhac-Agent") or "", AGENT_TOKEN):
                     log.warning("Từ chối lệnh DJ sai mã")
@@ -864,9 +889,105 @@ def save_window_size():
     """Nhớ cỡ cửa sổ (theo px giao diện) cho lần mở sau."""
     from System.Windows.Forms import FormWindowState
     form = window.native
-    if form.WindowState != FormWindowState.Normal:
+    if form.WindowState != FormWindowState.Normal or not form.Visible:
         return
     update_settings(window=[round(form.Size.Width / css_scale), round(form.Size.Height / css_scale)])
+
+
+# ---------------------------------------------------------------- khay hệ thống: bấm X thì nhạc vẫn chạy
+tray = None
+quitting = False
+tray_hint_shown = False
+
+
+def tray_enabled():
+    return tray is not None and load_settings().get("closeToTray", True)
+
+
+def in_background(fn):
+    """Việc bấm từ khay chạy trên luồng giao diện; evaluate_js mà gọi thẳng ở đó sẽ treo -> chạy luồng riêng."""
+    return lambda *_: threading.Thread(target=fn, daemon=True).start()
+
+
+def show_window():
+    from System.Windows.Forms import FormWindowState
+
+    def do():
+        form = window.native
+        form.Show()
+        if form.WindowState == FormWindowState.Minimized:
+            form.WindowState = FormWindowState.Normal
+        # Kéo lên trước: đổi TopMost ngay trên luồng giao diện. (window.on_top của pywebview đổi từ luồng khác
+        # -> treo cứng app khi cửa sổ vừa hiện lại từ khay)
+        form.TopMost = True
+        form.TopMost = False
+        form.Activate()
+    on_ui(do)
+
+
+def hide_to_tray():
+    """Ẩn cửa sổ (đang ở luồng giao diện), lần đầu thì báo nhạc vẫn chạy ở khay."""
+    global tray_hint_shown
+    save_window_size()
+    window.native.Hide()
+    if not tray_hint_shown:
+        tray_hint_shown = True
+        from System.Windows.Forms import ToolTipIcon
+        tray.ShowBalloonTip(4000, "Nhạc vẫn đang chạy",
+                            "Bấm biểu tượng Nhạc ở khay để mở lại. Chuột phải → Thoát để tắt hẳn.", ToolTipIcon.Info)
+
+
+def quit_app():
+    global quitting
+    quitting = True
+    try:
+        window.evaluate_js("saveSession(true); save(true)")
+        time.sleep(0.4)  # cho lần lưu cuối kịp gửi
+    except Exception:
+        pass
+    window.destroy()
+
+
+def setup_tray():
+    from System.Drawing import Icon
+    from System.Windows.Forms import ContextMenuStrip, MouseButtons, NotifyIcon, ToolStripMenuItem, ToolStripSeparator
+
+    def build():
+        global tray
+        icon = NotifyIcon()
+        ico = os.path.join(HERE, "player.ico")
+        icon.Icon = Icon.ExtractAssociatedIcon(sys.executable) if core.FROZEN or not os.path.isfile(ico) else Icon(ico)
+        icon.Text = "Nhạc"
+        menu = ContextMenuStrip()
+        js = lambda code: in_background(lambda: window.evaluate_js(code))  # noqa: E731
+        for label, handler in (("Mở Nhạc", in_background(show_window)), ("Phát / Dừng", js("toggle()")),
+                               ("Bài tiếp", js("next()")), (None, None), ("Thoát", in_background(quit_app))):
+            if label is None:
+                menu.Items.Add(ToolStripSeparator())
+                continue
+            item = ToolStripMenuItem(label)
+            item.Click += handler
+            menu.Items.Add(item)
+        icon.ContextMenuStrip = menu
+        icon.MouseClick += lambda s, e: in_background(show_window)() if e.Button == MouseButtons.Left else None
+        icon.Visible = True
+        tray = icon
+    try:
+        on_ui(build)
+    except Exception:
+        log.warning("Không tạo được biểu tượng ở khay hệ thống", exc_info=True)
+
+
+def on_closing():
+    """Đóng cửa sổ (Alt+F4, chuột phải trên taskbar...): bật khay thì chỉ ẩn, nhạc vẫn chạy."""
+    if not quitting and tray_enabled():
+        hide_to_tray()
+        return False  # huỷ việc đóng
+    save_window_size()
+    if tray is not None:
+        tray.Visible = False
+        tray.Dispose()
+    return None
 
 
 def fit_maximize_to_work_area():
@@ -888,9 +1009,7 @@ def open_in_window(p):
     try:
         if audio_path(p):
             window.evaluate_js(f"openFile({json.dumps(p)})")
-        window.restore()
-        window.on_top = True  # kéo cửa sổ lên trước
-        window.on_top = False
+        show_window()  # cửa sổ có thể đang ẩn ở khay; tự kéo lên trước
     except Exception:
         log.warning("Không chuyển được file sang cửa sổ đang mở, để dành đến khi trang nạp xong", exc_info=True)
         if audio_path(p):
@@ -927,7 +1046,13 @@ class Api:
             window.maximize()
 
     def close(self):
-        window.destroy()
+        if tray_enabled():
+            on_ui(hide_to_tray)
+        else:
+            quit_app()
+
+    def quit(self):
+        quit_app()
 
     def pick_folder(self):
         kind = getattr(webview, "FileDialog", None)
@@ -991,7 +1116,7 @@ class Api:
         except Exception as exc:
             log.warning("Cập nhật thất bại", exc_info=True)
             return {"ok": False, "error": f"Không cập nhật được: {str(exc)[:160]}"}
-        threading.Timer(1.0, window.destroy).start()  # nhường chỗ cho bộ cài ghi đè file
+        threading.Timer(1.0, quit_app).start()  # tắt hẳn (không thu xuống khay) để bộ cài ghi đè file
         return {"ok": True}
 
     def deps(self):
@@ -1032,6 +1157,27 @@ class Api:
             update_settings(agentApiKey=str(api_key).strip())
         return self.agent_info()
 
+    def agent_restore(self, session):
+        """Mở lại app: nối tiếp cuộc trò chuyện DJ lần trước (Claude Code vẫn giữ phiên trên đĩa)."""
+        if dj and isinstance(session, str) and re.fullmatch(r"[0-9a-f-]{36}", session):
+            dj.session = session
+
+    # ---- trí nhớ của DJ
+    def memory_get(self):
+        return djmemory.notes()
+
+    def memory_add(self, text):
+        return djmemory.add(text)
+
+    def memory_remove(self, note_id):
+        return djmemory.remove(note_id)
+
+    # ---- bấm X: thu xuống khay hệ thống hay tắt hẳn
+    def tray_setting(self, value=None):
+        if value is not None:
+            update_settings(closeToTray=bool(value))
+        return load_settings().get("closeToTray", True)
+
     # ---- danh sách Không bao giờ phát
     def blocklist_get(self):
         return blocklist.load()
@@ -1059,6 +1205,8 @@ def on_shown():
     rounded = ctypes.c_int(2)  # DWMWCP_ROUND: bo góc kiểu Windows 11
     ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(rounded), 4)
     fit_maximize_to_work_area()
+    if tray is None:
+        setup_tray()
 
 
 app_region_ready = False
@@ -1136,6 +1284,7 @@ def main():
     ytdlp_update.activate()  # trước khi bất cứ thứ gì nạp yt_dlp
     downloads.start(library_dir)
     ytdlp_update.start_background()
+    threading.Thread(target=habits.prune, name="prune", daemon=True).start()  # bỏ nhật ký nghe quá 4 tháng
 
     server = make_server()
     server.daemon_threads = True
@@ -1155,7 +1304,7 @@ def main():
     )
     window.events.shown += on_shown
     window.events.loaded += on_loaded
-    window.events.closing += save_window_size
+    window.events.closing += on_closing
     window.events.maximized += lambda: on_state(True)
     window.events.restored += lambda: on_state(False)
     webview.start(private_mode=False, storage_path=os.path.join(DATA_DIR, "webview"))

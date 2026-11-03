@@ -46,6 +46,7 @@ function renderView(animate = true) {
   else if (v.name === "downloads") html = downloadsHtml();
   else if (v.name === "settings") html = settingsHtml();
   else if (v.name === "welcome") html = welcomeHtml();
+  else if (v.name === "recap") html = recapHtml();
   content.innerHTML = `<div class="view" ${animate ? "" : 'style="animation:none"'}>${html}</div>`;
   markNav();
   markPlaying();
@@ -113,7 +114,7 @@ function homeHtml() {
   const most = Object.entries(S.plays).filter(([, v]) => v.n > 0).sort((a, b) => b[1].n - a[1].n).slice(0, 8)
     .map(([p, v]) => [T(p), v.n]).filter(([t]) => t);
   const fresh = library.slice().sort((a, b) => b.added - a.added).slice(0, 14);
-  let html = `<h1 class="greeting">${hello}</h1>${djHomeHtml()}`;
+  let html = `<h1 class="greeting">${hello}</h1>${djHomeHtml()}${habitHomeHtml()}`;
   if (recent.length) html += `<section class="section"><h2>Nghe gần đây</h2><div class="row-scroll">${recent.map(trackCard).join("")}</div></section>`;
   if (most.length) {
     html += `<section class="section"><h2>Nghe nhiều nhất</h2><div class="top-list">${most.map(([t, n], i) => `

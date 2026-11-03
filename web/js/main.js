@@ -23,6 +23,7 @@
   requestAnimationFrame(frame);
   initApp();
   pollDownloads(); // hàng tải còn dở từ lần trước
+  loadRecap(30); // thói quen 30 ngày cho gợi ý trang chủ
 
   booted = true;
   const opened = pendingOpen || new URLSearchParams(location.search).get("open");
