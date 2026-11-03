@@ -1011,7 +1011,8 @@ class Api:
     def agent_info(self):
         s = load_settings()
         return {"claude": agent.find_claude() or "", "model": s.get("agentModel", ""),
-                "hasKey": bool(s.get("agentApiKey")), "busy": bool(dj and dj.busy)}
+                "hasKey": bool(s.get("agentApiKey")), "busy": bool(dj and dj.busy),
+                "limits": dj.last_limits if dj else None}
 
     def agent_send(self, text):
         s = load_settings()

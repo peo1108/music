@@ -14,6 +14,17 @@ const KEYS = [
   ["E", "Âm thanh (EQ)"], ["D", "Chat với DJ"], ["Ctrl + F", "Tìm kiếm"],
 ];
 
+// Token DJ đã dùng: hôm nay, 7 ngày, từ trước tới giờ (lưu trong state.json)
+function djStatsText() {
+  const st = S.djStats || { days: {}, total: { tokens: 0, replies: 0, cost: 0 } };
+  const today = st.days[new Date().toLocaleDateString("sv-SE")] || { tokens: 0, replies: 0, cost: 0 };
+  const week = Object.entries(st.days).filter(([d]) => Date.now() - new Date(d).getTime() < 7 * 86400000)
+    .reduce((a, [, v]) => ({ tokens: a.tokens + v.tokens, replies: a.replies + v.replies, cost: a.cost + v.cost }), { tokens: 0, replies: 0, cost: 0 });
+  const line = (label, v) => `${label}: <b>${fmtTok(v.tokens)}</b> token · ${v.replies} lượt · ~${fmtUsd(v.cost)}`;
+  return `${line("Hôm nay", today)}<br>${line("7 ngày", week)}<br>${line("Tổng", st.total)}<br>`
+    + `<span class="set-hint">Tiền là quy đổi theo giá API cho dễ hình dung; dùng gói Claude thì chỉ trừ vào hạn mức, không mất thêm tiền.</span>`;
+}
+
 // Áp các tuỳ chọn giao diện vào trang
 function applyLook() {
   document.body.classList.toggle("motion", !!S.settings.motion);
@@ -53,6 +64,7 @@ function settingsHtml() {
       setRow("Model", "Model DJ dùng để suy nghĩ. Để Mặc định là dùng model bạn đang chọn trong Claude Code.",
         `<select class="set-select" data-agent-model>${[["", "Mặc định"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]]
           .map(([v, l]) => `<option value="${v}" ${(djInfo && djInfo.model) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`),
+      setRow("Đã dùng", djStatsText(), ""),
       setRow("API key riêng (không bắt buộc)", djInfo && djInfo.hasKey ? "Đang dùng API key đã nhập thay cho gói Claude." : "Cho ai không có gói Claude: dán API key của mình vào đây.",
         `<input class="set-input" type="password" id="agentKey" placeholder="sk-ant-…" spellcheck="false">${btn("saveAgentKey", "Lưu")}${djInfo && djInfo.hasKey ? btn("clearAgentKey", "Xoá") : ""}`),
     ])

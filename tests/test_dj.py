@@ -109,6 +109,21 @@ class AgentStreamTest(unittest.TestCase):
         self.assertEqual(err[0]["type"], "error")
         self.assertIn("/login", agent.friendly_error(err[0]["text"]))
 
+    def test_usage_and_limits(self):
+        result = {"type": "result", "subtype": "success", "session_id": "s", "total_cost_usd": 0.004595,
+                  "duration_ms": 2500, "num_turns": 1, "modelUsage": {
+                      "claude-sonnet-5-5": {"inputTokens": 2, "outputTokens": 4, "cacheReadInputTokens": 0,
+                                            "cacheCreationInputTokens": 1106},
+                      "claude-haiku-5-5": {"inputTokens": 1180, "outputTokens": 18}}}
+        usage = next(e for e in agent.translate(result) if e["type"] == "usage")
+        self.assertEqual((usage["input"], usage["output"], usage["cacheWrite"], usage["total"]), (1182, 22, 1106, 2310))
+        self.assertEqual(usage["models"], {"sonnet-5-5": 1112, "haiku-5-5": 1198})
+        limits = agent.translate({"type": "rate_limit_event", "rate_limit_info": {"status": "allowed", "unifiedWindows": {
+            "five_hour": {"utilization": 0.64, "resetsAt": 1793736600, "status": "allowed"},
+            "seven_day": {"utilization": 0.08, "resetsAt": 1794322800, "status": "allowed"}}}})[0]
+        self.assertEqual(limits["windows"]["five_hour"]["used"], 0.64)
+        self.assertEqual(limits["windows"]["seven_day"]["resetsAt"], 1794322800)
+
     def test_never_uses_npm_cmd_shim(self):
         with tempfile.TemporaryDirectory() as d:
             shim = os.path.join(d, "claude.cmd")

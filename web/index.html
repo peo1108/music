@@ -59,7 +59,7 @@
     <div class="content" id="content"></div>
 
     <!-- Thanh phát nhạc nổi (kiêm thanh tiêu đề để kéo cửa sổ) -->
-    <header class="toolbar glass lg" data-bezel="22">
+    <header class="toolbar glass lg drag" data-bezel="22">
       <div class="bar-drag drag"></div>
       <div class="transport">
         <button class="tbtn" id="shuffleBtn" title="Ngẫu nhiên (S)"><i data-ic="shuffle"></i></button>
@@ -114,7 +114,7 @@
     <div class="rp-body lyrics small" id="rpLyrics"></div>
     <!-- DJ: chat với Claude Code để chọn nhạc -->
     <div class="dj" id="rpDj" hidden>
-      <div class="dj-top"><span>Chat với DJ</span><button class="mini-btn" data-dj-new title="Cuộc trò chuyện mới"><i data-ic="plus"></i></button></div>
+      <div class="dj-top"><div class="dj-quota" id="djQuota">Chat với DJ</div><button class="mini-btn" data-dj-new title="Cuộc trò chuyện mới"><i data-ic="plus"></i></button></div>
       <div class="dj-msgs" id="djMsgs"></div>
       <div class="dj-input">
         <textarea id="djInput" rows="1" placeholder="Hôm nay thấy sao? Muốn nghe gì…" spellcheck="false"></textarea>

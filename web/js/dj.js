@@ -19,6 +19,63 @@ const djSuggestions = () => {
   return DJ_SUGGEST[h >= 5 && h < 11 ? "morning" : h >= 11 && h < 17 ? "noon" : "evening"];
 };
 
+// ---------- Token & hạn mức ----------
+let djLimits = null; // {windows: {five_hour: {used, resetsAt}, seven_day: {...}}}
+const djSession = { tokens: 0, replies: 0, cost: 0, paid: false };
+const nf = new Intl.NumberFormat("vi-VN");
+const fmtTok = (n) => (n < 1000 ? nf.format(n) : `${(n / 1000).toLocaleString("vi-VN", { maximumFractionDigits: n < 10000 ? 1 : 0 })}k`);
+const fmtUsd = (x) => `$${(x || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: x < 0.1 ? 3 : 2 })}`;
+const fmtSec = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)} phút ${Math.round((ms % 60000) / 1000)} giây` : `${Math.round(ms / 1000)} giây`);
+function fmtReset(ts) {
+  if (!ts) return "";
+  const d = new Date(ts * 1000), now = new Date();
+  const hm = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === now.toDateString() ? hm : `${hm} ${d.toLocaleDateString("vi-VN", { weekday: "short", day: "numeric", month: "numeric" })}`;
+}
+const WINDOW_NAMES = { five_hour: "5 giờ", seven_day: "7 ngày", seven_day_opus: "7 ngày Opus", seven_day_sonnet: "7 ngày Sonnet" };
+function renderDjTop() {
+  const box = $("#djQuota");
+  if (!box) return;
+  const session = djSession.replies
+    ? `<div class="dj-session">Phiên này: <b>${fmtTok(djSession.tokens)}</b> token · ${djSession.replies} lượt${djSession.paid ? ` · ${fmtUsd(djSession.cost)}` : ""}</div>` : "";
+  const wins = djLimits && djLimits.windows ? Object.entries(djLimits.windows).filter(([, w]) => typeof w.used === "number") : [];
+  if (!wins.length) {
+    box.innerHTML = (djInfo && djInfo.hasKey ? `<div class="dj-session">Đang dùng API key riêng</div>` : `<div class="dj-session">Hạn mức gói Claude hiện sau tin nhắn đầu</div>`) + session;
+    return;
+  }
+  box.innerHTML = wins.map(([k, w]) => {
+    const pct = Math.round(w.used * 100);
+    return `<div class="q-row ${pct >= 90 ? "hot" : pct >= 70 ? "warm" : ""}" title="Gói Claude, cửa sổ ${WINDOW_NAMES[k] || k}: đã dùng ${pct}%. Đặt lại lúc ${fmtReset(w.resetsAt)}">
+      <span class="q-name">${WINDOW_NAMES[k] || k}</span><span class="q-bar"><i style="width:${Math.min(100, pct)}%"></i></span>
+      <span class="q-pct">${pct}%</span><span class="q-reset">↻ ${fmtReset(w.resetsAt)}</span></div>`;
+  }).join("") + session;
+}
+function recordUsage(ev) {
+  djSession.tokens += ev.total;
+  djSession.replies += 1;
+  djSession.cost += ev.costUsd;
+  djSession.paid = ev.paid;
+  const day = new Date().toLocaleDateString("sv-SE"); // yyyy-mm-dd theo giờ máy
+  const st = S.djStats || (S.djStats = { days: {}, total: { tokens: 0, replies: 0, cost: 0 } });
+  for (const bucket of [st.total, (st.days[day] = st.days[day] || { tokens: 0, replies: 0, cost: 0 })]) {
+    bucket.tokens += ev.total;
+    bucket.replies += 1;
+    bucket.cost = Math.round((bucket.cost + ev.costUsd) * 10000) / 10000;
+  }
+  const keep = Object.keys(st.days).sort().slice(-60); // giữ 60 ngày gần nhất
+  st.days = Object.fromEntries(keep.map((k) => [k, st.days[k]]));
+  save();
+}
+function usageHtml(m) {
+  const models = Object.entries(m.models || {}).map(([k, v]) => `${esc(k)}: ${fmtTok(v)}`).join(" · ");
+  const costNote = m.paid ? "Tính tiền thật vào API key của bạn." : "Quy đổi theo giá API cho dễ hình dung. Dùng gói Claude nên không mất thêm tiền, chỉ trừ vào hạn mức.";
+  return `<details class="dj-usage"><summary>${icon("spark")}${fmtTok(m.total)} token · ${m.turns} bước · ${fmtSec(m.durationMs)} · ${m.paid ? "" : "~"}${fmtUsd(m.costUsd)}</summary>
+    <div class="dj-usage-detail">
+      <div><span>Vào (mới)</span><b>${nf.format(m.input)}</b></div><div><span>Đọc cache</span><b>${nf.format(m.cacheRead)}</b></div>
+      <div><span>Ghi cache</span><b>${nf.format(m.cacheWrite)}</b></div><div><span>Ra (DJ viết)</span><b>${nf.format(m.output)}</b></div>
+      <p>${models}</p><p>${costNote}</p></div></details>`;
+}
+
 // ---------- Hiển thị ----------
 const djFormat = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
 function djMsgHtml(m, i) {
@@ -26,6 +83,7 @@ function djMsgHtml(m, i) {
   if (m.role === "dj") return `<div class="dj-msg bot">${djFormat(m.text)}</div>`;
   if (m.role === "tool") return `<div class="dj-step">${icon("spark")}${esc(m.text)}</div>`;
   if (m.role === "error") return `<div class="dj-msg err">${esc(m.text)}</div>`;
+  if (m.role === "usage") return usageHtml(m);
   if (m.role === "play") {
     return `<div class="dj-card"><div class="dj-card-art">${playlistCover(m.uris.map(T).filter(Boolean))}</div>
       <div class="dj-card-body"><div class="dj-card-kind">${esc(m.kind)}</div><div class="dj-card-title">${esc(m.title)}</div>
@@ -71,8 +129,12 @@ window.agentEvent = (ev) => {
   if (ev.type === "text") djMsgs.push({ role: "dj", text: ev.text });
   else if (ev.type === "tool") djMsgs.push({ role: "tool", text: ev.text });
   else if (ev.type === "error") djMsgs.push({ role: "error", text: ev.text });
+  else if (ev.type === "usage") { djMsgs.push({ role: "usage", ...ev }); recordUsage(ev); }
+  else if (ev.type === "limits") djLimits = ev;
   else if (ev.type === "done") djBusy = false;
   renderDj();
+  renderDjTop();
+  if (ev.type === "usage" && view.name === "settings") renderView(false);
 };
 
 // ---------- Công cụ phía giao diện mà DJ gọi ----------
@@ -207,6 +269,8 @@ ACTIONS.djAsk = (b) => djSend(b.dataset.text);
 async function loadDjInfo() {
   djInfo = await py("agent_info");
   djBlocked = (await py("blocklist_get")) || [];
+  if (djInfo && djInfo.limits) djLimits = djInfo.limits;
   renderDj();
+  renderDjTop();
   if (view.name === "settings" || view.name === "home") renderView(false);
 }

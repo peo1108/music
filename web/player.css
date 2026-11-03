@@ -35,7 +35,10 @@ svg.ic.fill { fill: currentColor; stroke: none; }
 
 /* Kéo cửa sổ: vùng drag là "thanh tiêu đề" thật của Windows (WebView2 app-region) */
 .drag { app-region: drag; -webkit-app-region: drag; }
-.drag button, .drag input, .drag a, .drag canvas, .drag label, .drag .lcd, .drag .vol, .nodrag { app-region: no-drag; -webkit-app-region: no-drag; }
+/* Chỉ những thứ bấm được mới chặn kéo; khoảng trống giữa các nút, chữ tên bài... đều cầm kéo cửa sổ được */
+.drag button, .drag input, .drag textarea, .drag select, .drag a, .drag canvas, .drag label, .nodrag { app-region: no-drag; -webkit-app-region: no-drag; }
+/* Sóng nhạc chạy nền phía sau khung bài hát chỉ để trang trí -> vẫn kéo được */
+.drag .lcd-viz { app-region: drag; -webkit-app-region: drag; }
 /* Vùng kéo vẫn tồn tại dù phần tử trong suốt -> tắt của lớp bên dưới khi màn hình Đang phát đang mở */
 body.np-open .shell .drag { app-region: no-drag; -webkit-app-region: no-drag; }
 
@@ -191,7 +194,7 @@ body.rp-open .toolbar { right: 0; }
    vùng kéo là lớp nền riêng, các cụm nút nằm trên và đánh dấu no-drag */
 .toolbar { container: bar / inline-size; }
 .bar-drag { position: absolute; inset: 0; border-radius: inherit; }
-.toolbar > .transport, .toolbar > .lcd, .toolbar > .tools { position: relative; app-region: no-drag; -webkit-app-region: no-drag; }
+.toolbar > .transport, .toolbar > .lcd, .toolbar > .tools { position: relative; }
 .lcd { container: lcd / inline-size; }
 @container bar (max-width: 860px) { .vol { width: 96px; } }
 @container bar (max-width: 700px) { .vol { width: 84px; } }
@@ -646,3 +649,28 @@ kbd { font: 600 11.5px "Segoe UI"; color: #fff; padding: 3px 8px; border-radius:
 .block-chip svg { width: 12px; height: 12px; }
 .block-add { display: flex; gap: 8px; }
 .block-add .set-input { flex: 1; max-width: 320px; }
+
+/* ================= DJ: token mỗi lượt & hạn mức gói Claude ================= */
+.dj-top { align-items: flex-start; gap: 8px; }
+.dj-quota { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.q-row { display: grid; grid-template-columns: 44px 1fr 34px auto; align-items: center; gap: 7px; font-size: 11px; color: var(--text2); }
+.q-name { white-space: nowrap; }
+.q-bar { height: 5px; border-radius: 5px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.q-bar i { display: block; height: 100%; border-radius: inherit; background: rgb(120, 220, 150); transition: width .6s var(--ease); }
+.q-row.warm .q-bar i { background: rgb(255, 190, 90); }
+.q-row.hot .q-bar i { background: rgb(255, 95, 95); }
+.q-row.hot .q-pct { color: #ff9b9b; }
+.q-pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.q-reset { color: var(--text3); white-space: nowrap; font-weight: 500; }
+.dj-session { font-size: 11px; color: var(--text3); font-weight: 500; }
+.dj-session b { color: var(--text2); }
+.dj-usage { align-self: flex-start; max-width: 100%; font-size: 11px; color: var(--text3); margin: -3px 0 2px 4px; }
+.dj-usage summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.dj-usage summary::-webkit-details-marker { display: none; }
+.dj-usage summary:hover { color: var(--text2); }
+.dj-usage summary svg { width: 11px; height: 11px; flex: none; }
+.dj-usage-detail { margin-top: 6px; padding: 9px 11px; border-radius: 10px; background: rgba(0, 0, 0, .2);
+                   display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; }
+.dj-usage-detail div { display: flex; justify-content: space-between; gap: 8px; }
+.dj-usage-detail b { color: var(--text2); font-variant-numeric: tabular-nums; }
+.dj-usage-detail p { grid-column: 1 / -1; margin: 4px 0 0; line-height: 1.45; }

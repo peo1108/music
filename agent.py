@@ -28,10 +28,15 @@ Chỉ hỏi khi yêu cầu thật sự mơ hồ.
 
 Cách làm khi được nhờ mở nhạc:
 1. Gọi get_context để biết giờ, bài đang phát, gu nghe và danh sách chặn.
-2. Gom ứng viên: bài quen trong gu (search_library, bài nghe nhiều/yêu thích trong context) và bài mới đúng gu \
-(search_online với vài câu tìm cụ thể, tiếng Việt hoặc tiếng Anh tuỳ gu; related_tracks từ 1-2 bài làm hạt giống).
+2. Gom ứng viên: bài quen trong gu (search_library, bài nghe nhiều/yêu thích trong context) và bài mới đúng gu. \
+Bài mới phải tìm ở CẢ HAI nguồn cho phong phú:
+   - YouTube (search_online source=yt): bản chính thức, MV, lyric video.
+   - SoundCloud (search_online source=sc): luôn tìm ít nhất 2 lần với câu tìm khác nhau. SoundCloud mạnh về remix, \
+lofi, slowed/speed up, mashup, bản indie/underground Việt mà YouTube ít có.
+   - related_tracks từ 1-2 bài làm hạt giống, nên có 1 hạt giống là bài SoundCloud (cho ra gợi ý của SoundCloud).
 3. Chọn 15-30 bài, xếp theo "mạch cảm xúc": buồn mà muốn được an ủi thì đi từ buồn -> nhẹ -> ấm dần; muốn đắm chìm \
-thì giữ một màu. Trộn khoảng 40% bài quen, 60% bài mới trừ khi người dùng muốn khác.
+thì giữ một màu. Trộn khoảng 40% bài quen, 60% bài mới trừ khi người dùng muốn khác. Nhắm khoảng 1/3 playlist là \
+bài SoundCloud nếu tìm được bài hợp (đừng nhét bài không hợp chỉ để đủ tỉ lệ). Người dùng chỉ định nguồn nào thì theo.
 4. Gọi play_tracks (mode replace, đặt title ngắn kiểu "Tối thứ Ba buồn hiu"). Đang nghe mà người dùng muốn đổi \
 hướng thì dùng mode after_current để không cắt ngang bài đang phát.
 5. Trả lời 1-2 câu kiểu DJ dẫn chương trình, nói tên buổi nghe. Không liệt kê mã bài (uri), không dán danh sách dài.
@@ -93,11 +98,36 @@ def tool_label(name, args):
     return f"{label}: {detail}" if detail else label
 
 
+def usage_of(result):
+    """Số token của 1 lượt trả lời, cộng mọi model (Claude Code còn ngầm dùng Haiku cho việc phụ)."""
+    models = {}
+    totals = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+    for name, m in (result.get("modelUsage") or {}).items():
+        part = {"input": m.get("inputTokens") or 0, "output": m.get("outputTokens") or 0,
+                "cacheRead": m.get("cacheReadInputTokens") or 0, "cacheWrite": m.get("cacheCreationInputTokens") or 0}
+        for k in totals:
+            totals[k] += part[k]
+        models[name.replace("claude-", "")] = sum(part.values())
+    return {"type": "usage", **totals, "total": sum(totals.values()), "models": models,
+            "costUsd": round(result.get("total_cost_usd") or 0, 4), "durationMs": result.get("duration_ms") or 0,
+            "turns": result.get("num_turns") or 0}
+
+
+def limits_of(event):
+    """Hạn mức gói Claude: % đã dùng của cửa sổ 5 giờ / 7 ngày và lúc đặt lại."""
+    info = event.get("rate_limit_info") or {}
+    windows = {k: {"used": w.get("utilization"), "resetsAt": w.get("resetsAt"), "status": w.get("status")}
+               for k, w in (info.get("unifiedWindows") or {}).items() if isinstance(w, dict)}
+    return {"type": "limits", "status": info.get("status"), "windows": windows}
+
+
 def translate(event):
     """1 dòng stream-json của Claude Code -> danh sách sự kiện cho khung chat."""
     t = event.get("type")
     out = []
-    if t == "assistant":
+    if t == "rate_limit_event":
+        out.append(limits_of(event))
+    elif t == "assistant":
         for block in (event.get("message") or {}).get("content") or []:
             if block.get("type") == "text" and block.get("text", "").strip():
                 out.append({"type": "text", "text": block["text"].strip()})
@@ -107,6 +137,8 @@ def translate(event):
         if event.get("is_error") or event.get("subtype") not in (None, "success"):
             msg = event.get("result") or event.get("subtype") or "Claude Code báo lỗi"
             out.append({"type": "error", "text": str(msg)[:500]})
+        if event.get("modelUsage"):
+            out.append(usage_of(event))
         out.append({"type": "done", "session": event.get("session_id")})
     return out
 
@@ -129,6 +161,8 @@ class Agent:
         self.session = None
         self.proc = None
         self.lock = threading.Lock()
+        self.last_limits = None  # hạn mức gói Claude lần gần nhất (để mở lại khung chat vẫn thấy)
+        self.paid = False        # đang dùng API key riêng (tốn tiền thật) thay vì gói Claude
 
     @property
     def busy(self):
@@ -168,6 +202,7 @@ class Agent:
             if self.session:
                 argv += ["--resume", self.session]
             env = dict(os.environ)
+            self.paid = bool(api_key)
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
             try:
@@ -208,6 +243,10 @@ class Agent:
                         continue
                     if ev["type"] == "error":
                         ev["text"] = friendly_error(ev["text"])
+                    elif ev["type"] == "limits":
+                        self.last_limits = ev
+                    elif ev["type"] == "usage":
+                        ev["paid"] = self.paid
                     self.emit(ev)
             try:
                 proc.wait(timeout=15)
