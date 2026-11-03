@@ -11,10 +11,11 @@ Hỗ trợ cả link playlist.
 import argparse
 import os
 import re
-import shutil
 import sys
 
 import yt_dlp
+
+import core
 
 FINAL_EXTS = (".mp3", ".m4a", ".opus", ".ogg", ".flac")
 LEFTOVER_EXTS = (".webm", ".webp", ".jpg", ".jpeg", ".png")
@@ -42,7 +43,7 @@ def cleanup_leftovers(folder):
 
 def download(urls, out, mp3=False, m4a=False, progress_hook=None, pp_hook=None, logger=None):
     """Tải audio về thư mục `out`. Các hook/logger (tuỳ chọn) để giao diện theo dõi tiến độ."""
-    has_ffmpeg = shutil.which("ffmpeg") is not None
+    has_ffmpeg = core.find_tool("ffmpeg") is not None
     if mp3 and not has_ffmpeg:
         raise RuntimeError("Cần cài ffmpeg để đổi sang mp3:  winget install Gyan.FFmpeg")
 
@@ -56,6 +57,7 @@ def download(urls, out, mp3=False, m4a=False, progress_hook=None, pp_hook=None, 
         "noplaylist": True,
         "ignoreerrors": True,
         "postprocessors": [],
+        **core.ytdl_options(),
     }
 
     if mp3:

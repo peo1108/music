@@ -1,4 +1,5 @@
 @echo off
+rem Dong goi va cai Nhac vao may nay (go cai: Cai dat > Ung dung > Nhac)
 cd /d "%~dp0"
-python cai_dat_player.py %*
+python build.py --install %*
 pause

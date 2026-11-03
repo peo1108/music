@@ -15,9 +15,9 @@ import time
 import urllib.parse
 import urllib.request
 
-import yt_dlp
+import core
 
-DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "NhacPlayer")
+DATA_DIR = core.DATA_DIR
 CACHE_DIR = os.path.join(DATA_DIR, "online")
 STATE_FILE = os.path.join(DATA_DIR, "online.json")
 AUDIO_EXTS = (".mp3", ".m4a", ".opus", ".ogg", ".flac", ".webm", ".mp4")
@@ -35,6 +35,12 @@ _stream_locks = {}
 
 class OnlineError(Exception):
     pass
+
+
+def _ydl(opts):
+    """Tạo YoutubeDL. Chỉ nạp yt_dlp khi cần thật (thư viện nặng ~50MB RAM), kèm đường dẫn ffmpeg/Deno."""
+    import yt_dlp
+    return yt_dlp.YoutubeDL({**core.ytdl_options(), **opts})
 
 
 def is_online(p):
@@ -126,7 +132,7 @@ def search(src, query):
         return []
     opts = {"quiet": True, "no_warnings": True, "skip_download": True,
             "extract_flat": True, "noplaylist": True, "socket_timeout": 10}
-    data = yt_dlp.YoutubeDL(opts).extract_info(
+    data = _ydl(opts).extract_info(
         f"{prefix}15:{query.strip()}", download=False)
     tracks = [t for t in (_track(src, e) for e in data.get("entries") or [] if e) if t]
     _remember(tracks)
@@ -176,7 +182,7 @@ def prepare(uri):
                 "format": "bestaudio[protocol^=http]/bestaudio",
                 "outtmpl": base + ".%(ext)s", "socket_timeout": 20, "retries": 2}
         try:
-            data = yt_dlp.YoutubeDL(opts).extract_info(web, download=True)
+            data = _ydl(opts).extract_info(web, download=True)
         except Exception as e:
             for leftover in glob.glob(base + ".*"):
                 if leftover.endswith(".part"):
@@ -214,7 +220,7 @@ def save(uri, folder):
     web = _web(uri, info)
     if not web:
         raise OnlineError("Không tìm thấy bài hát này")
-    if not shutil.which("ffmpeg"):
+    if not core.find_tool("ffmpeg"):
         raise OnlineError("Cần ffmpeg để lưu mp3: winget install Gyan.FFmpeg")
     os.makedirs(folder, exist_ok=True)
     with _lock:
@@ -231,7 +237,7 @@ def save(uri, folder):
                 ],
                 "socket_timeout": 20, "retries": 2}
         try:
-            data = yt_dlp.YoutubeDL(opts).extract_info(web, download=True)
+            data = _ydl(opts).extract_info(web, download=True)
         except Exception as e:
             _clean_base(base)
             raise OnlineError(_clean_error(e)) from e
@@ -296,7 +302,7 @@ def resolve(uri):
         error = ""
         for _ in range(2):
             try:
-                data = yt_dlp.YoutubeDL(opts).extract_info(web, download=False)
+                data = _ydl(opts).extract_info(web, download=False)
                 url = data.get("url") or ""
                 headers = dict(data.get("http_headers") or {})
                 if not url:

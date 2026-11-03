@@ -1,7 +1,7 @@
-"""Trình phát nhạc Nhạc: cửa sổ app không viền (WebView2) + server nội bộ cho giao diện player.html.
+"""Trình phát nhạc Nhạc: cửa sổ app không viền (WebView2) + server nội bộ cho giao diện trong web/.
 
 Chạy thử:  python player.py [file nhạc]
-Bản cài:   CaiDatPlayer.bat đóng gói thành NhacPlayer.exe và đăng ký với Windows.
+Đóng gói:  python build.py  (tạo bộ cài dist/NhacSetup-x.y.z.exe)
 Mở thêm file khi app đang chạy thì file được chuyển sang cửa sổ đang mở (chỉ chạy 1 cửa sổ).
 """
 import base64
@@ -23,16 +23,23 @@ from ctypes import wintypes
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import mutagen
-import online
 import webview
 from mutagen.flac import FLAC, Picture
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4, MP4Cover
 
-ASSET_DIR = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "NhacPlayer")
+import core
+import online
+import updater
+from core import DATA_DIR, NO_WINDOW, log
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ASSET_DIR = getattr(sys, "_MEIPASS", HERE)
+WEB_DIR = os.path.join(ASSET_DIR, "web")
 SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
+BACKUP_DIR = os.path.join(DATA_DIR, "backups")
+BACKUP_KEEP = 14  # số bản sao lưu state.json giữ lại (mỗi ngày 1 bản)
 LYRICS_DIR = os.path.join(DATA_DIR, "lyrics")
 PEAKS_DIR = os.path.join(DATA_DIR, "peaks")
 PORT = 47816  # cố định để chỉ chạy 1 cửa sổ
@@ -46,15 +53,18 @@ AUDIO_TYPES = {
     ".flac": "audio/flac",
     ".wav": "audio/wav",
 }
-STREAM_TYPES = {**AUDIO_TYPES, ".webm": "audio/webm", ".mp4": "audio/mp4", ".aac": "audio/aac"}
-STATIC = {
-    "/": ("player.html", "text/html; charset=utf-8"),
-    "/player.css": ("player.css", "text/css; charset=utf-8"),
-    "/player.js": ("player.js", "application/javascript; charset=utf-8"),
+STREAM_TYPES = {**AUDIO_TYPES, ".aac": "audio/aac"}
+WEB_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
 }
 DEFAULT_SIZE = (1180, 760)  # các cỡ này tính theo px giao diện
 MIN_SIZE = (900, 600)
-NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 SWP_NOZORDER, SWP_NOACTIVATE = 0x4, 0x10
 VK_LBUTTON, VK_RBUTTON, SM_SWAPBUTTON = 0x01, 0x02, 23
 
@@ -62,23 +72,56 @@ window = None
 css_scale = 1.0  # tỉ lệ điểm ảnh thật / px giao diện (devicePixelRatio của trang)
 window_sized = False
 state_lock = threading.Lock()
+settings_lock = threading.Lock()
 
 
-# ---------------------------------------------------------------- thư viện nhạc
-def load_settings():
+# ---------------------------------------------------------------- tiện ích
+def read_json(path):
+    """Đọc file JSON; thiếu file hoặc file hỏng (vd. ghi dở khi tắt máy) thì trả về None."""
     try:
-        with open(SETTINGS_FILE, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             return json.load(fh)
     except (OSError, ValueError):
-        return {}
+        return None
+
+
+def write_json(path, data):
+    """Ghi qua file tạm rồi đổi tên: tắt máy giữa chừng cũng không để lại file hỏng."""
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+# ---------------------------------------------------------------- cài đặt & thư viện nhạc
+def load_settings():
+    data = read_json(SETTINGS_FILE)
+    return data if isinstance(data, dict) else {}
+
+
+def update_settings(**changes):
+    with settings_lock:
+        settings = load_settings()
+        settings.update(changes)
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            write_json(SETTINGS_FILE, settings)
+        except OSError:
+            log.warning("Không ghi được settings.json", exc_info=True)
+
+
+def default_library():
+    """Bản cài: thư mục Nhạc của người dùng (Music\\Nhac). Chạy từ mã nguồn: out/ cạnh file script."""
+    if core.FROZEN:
+        return os.path.join(os.path.expanduser("~"), "Music", "Nhac")
+    return os.path.join(HERE, "out")
 
 
 def library_dir():
-    """Thư mục thư viện: lấy từ settings.json, mặc định là out/ cạnh file script."""
     lib = load_settings().get("library")
     if lib and os.path.isdir(lib):
         return lib
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
+    return default_library()
 
 
 def get_cover(path):
@@ -107,7 +150,7 @@ def get_cover(path):
     return None
 
 
-def read_track(path):
+def _read_track(path):
     info = {"file": path, "title": os.path.splitext(os.path.basename(path))[0], "artist": "",
             "album": "", "year": "", "duration": 0, "cover": False, "added": 0}
     try:
@@ -127,9 +170,38 @@ def read_track(path):
     return info
 
 
+_track_cache = {}  # đường dẫn -> ((cỡ, thời điểm sửa), thông tin bài)
+
+
+def read_track(path):
+    """Đọc tag của bài, nhớ lại theo cỡ + thời điểm sửa file: quét lại thư viện chỉ đọc file mới/đã đổi."""
+    try:
+        st = os.stat(path)
+        key = (st.st_size, st.st_mtime_ns)
+    except OSError:
+        key = None
+    hit = _track_cache.get(path)
+    if key and hit and hit[0] == key:
+        return dict(hit[1])
+    info = _read_track(path)
+    if key:
+        _track_cache[path] = (key, info)
+    return dict(info)
+
+
+def norm_folder(folder):
+    """'C:' là thư mục hiện hành của ổ C, không phải gốc ổ -> đổi thành 'C:\\'."""
+    if re.fullmatch(r"[A-Za-z]:", folder or ""):
+        return folder + "\\"
+    return folder
+
+
 def list_folder(folder):
     lib = library_dir()
-    folder = folder or lib
+    folder = norm_folder(folder) or lib
+    is_lib = os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.abspath(lib))
+    if is_lib:
+        os.makedirs(folder, exist_ok=True)
     tracks = []
     if os.path.isdir(folder):
         for n in os.listdir(folder):
@@ -140,7 +212,7 @@ def list_folder(folder):
     return {
         "dir": folder,
         "name": os.path.basename(folder.rstrip("\\/")) or folder,
-        "isLibrary": os.path.normcase(os.path.abspath(folder)) == os.path.normcase(os.path.abspath(lib)),
+        "isLibrary": is_lib,
         "tracks": tracks,
     }
 
@@ -164,6 +236,34 @@ def file_key(path):
     return hashlib.sha1(f"{path}|{st.st_size}|{int(st.st_mtime)}".encode("utf-8")).hexdigest()
 
 
+# ---------------------------------------------------------------- dữ liệu người dùng (state.json)
+def backup_state():
+    """Trước lần ghi đầu tiên mỗi ngày, chép state.json sang backups/ (giữ BACKUP_KEEP bản gần nhất)."""
+    if not os.path.exists(STATE_FILE):
+        return
+    target = os.path.join(BACKUP_DIR, time.strftime("state-%Y%m%d.json"))
+    if os.path.exists(target):
+        return
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        shutil.copy2(STATE_FILE, target)
+        olds = sorted(n for n in os.listdir(BACKUP_DIR) if n.startswith("state-") and n.endswith(".json"))
+        for name in olds[:-BACKUP_KEEP]:
+            os.remove(os.path.join(BACKUP_DIR, name))
+    except OSError:
+        log.warning("Không sao lưu được state.json", exc_info=True)
+
+
+def write_state(body):
+    json.loads(body)  # chỉ lưu khi là JSON hợp lệ
+    with state_lock:
+        backup_state()
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(body)
+        os.replace(tmp, STATE_FILE)
+
+
 # ---------------------------------------------------------------- lời bài hát (LRCLIB)
 JUNK = re.compile(
     r"[\(\[【](?=[^\)\]】]*(official|mv|m/v|lyric|audio|video|visuali[sz]er|remaster|hd|4k|"
@@ -176,7 +276,8 @@ def clean_title(title, artist):
     t = re.split(r"\s[|｜]\s", t)[0]
     if " - " in t:
         a, b = t.split(" - ", 1)
-        if not artist or artist.lower() in a.lower():
+        # kênh "Ca sĩ Official" vẫn tính là cùng ca sĩ với "Ca sĩ - Bài"
+        if not artist or artist.lower() in a.lower() or a.lower() in artist.lower():
             artist, t = a, b
     t = re.sub(r"\s+(ft\.?|feat\.?)\s.*$", "", t, flags=re.I)
     return t.strip(" -–"), (artist or "").strip()
@@ -184,7 +285,7 @@ def clean_title(title, artist):
 
 def lrclib(endpoint, params):
     url = f"https://lrclib.net/api/{endpoint}?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": "NhacPlayer/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": f"NhacPlayer/{core.VERSION}"})
     try:
         with urllib.request.urlopen(req, timeout=8) as r:
             return json.loads(r.read().decode("utf-8"))
@@ -200,12 +301,10 @@ def find_lyrics(path):
 def find_lyrics_for(info, cache_name):
     os.makedirs(LYRICS_DIR, exist_ok=True)
     cache = os.path.join(LYRICS_DIR, cache_name)
-    if os.path.exists(cache):
-        with open(cache, encoding="utf-8") as fh:
-            data = json.load(fh)
-        # Lần trước không tìm thấy thì sau 3 ngày thử lại
-        if data.get("synced") or data.get("plain") or time.time() - data.get("at", 0) < 3 * 86400:
-            return data
+    data = read_json(cache)  # file hỏng -> None -> tìm lại và ghi đè
+    # Lần trước không tìm thấy thì sau 3 ngày thử lại
+    if isinstance(data, dict) and (data.get("synced") or data.get("plain") or time.time() - data.get("at", 0) < 3 * 86400):
+        return data
 
     title, artist = clean_title(info["title"], info["artist"])
     dur = info["duration"]
@@ -231,33 +330,28 @@ def find_lyrics_for(info, cache_name):
     if best:
         data.update(synced=best.get("syncedLyrics") or "", plain=best.get("plainLyrics") or "",
                     source=f'{best.get("artistName", "")} - {best.get("trackName", "")}')
-    with open(cache, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, ensure_ascii=False)
+    write_json(cache, data)
     return data
 
 
 # ---------------------------------------------------------------- dạng sóng
-def find_ffmpeg():
-    exe = shutil.which("ffmpeg")
-    if exe:
-        return exe
-    links = os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Microsoft\WinGet\Links\ffmpeg.exe")
-    return links if os.path.isfile(links) else None
-
-
 def compute_peaks(path, buckets=800):
     os.makedirs(PEAKS_DIR, exist_ok=True)
     cache = os.path.join(PEAKS_DIR, file_key(path) + ".json")
-    if os.path.exists(cache):
-        with open(cache, encoding="utf-8") as fh:
-            return json.load(fh)
-    ffmpeg = find_ffmpeg()
+    cached = read_json(cache)
+    if isinstance(cached, list) and cached:
+        return cached
+    ffmpeg = core.find_tool("ffmpeg")
     if not ffmpeg:
         return None
-    proc = subprocess.run(
-        [ffmpeg, "-v", "error", "-i", path, "-ac", "1", "-ar", "800", "-f", "s16le", "-"],
-        capture_output=True, creationflags=NO_WINDOW, timeout=120,
-    )
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-v", "error", "-i", path, "-ac", "1", "-ar", "800", "-f", "s16le", "-"],
+            capture_output=True, creationflags=NO_WINDOW, timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("ffmpeg quá 120 giây khi vẽ dạng sóng: %s", path)
+        return None
     samples = array("h")
     samples.frombytes(proc.stdout[: len(proc.stdout) // 2 * 2])
     if not samples:
@@ -271,15 +365,74 @@ def compute_peaks(path, buckets=800):
         peaks.append(max(max(chunk), -min(chunk)))
     top = max(peaks) or 1
     peaks = [round(p / top, 3) for p in peaks]
-    with open(cache, "w", encoding="utf-8") as fh:
-        json.dump(peaks, fh)
+    write_json(cache, peaks)
     return peaks
 
 
 # ---------------------------------------------------------------- server
+def parse_range(header, size):
+    """Header Range -> (start, end, status). 206: đoạn hợp lệ; 416: vượt cuối file;
+    200: không có hoặc không hiểu được Range -> gửi cả file (đúng chuẩn HTTP, thay vì làm chết request)."""
+    whole = (0, size - 1, 200)
+    if not header or not header.startswith("bytes="):
+        return whole
+    a, _, b = header[6:].split(",")[0].strip().partition("-")
+    a, b = a.strip(), b.strip()
+    try:
+        if a:
+            start = int(a)
+            end = int(b) if b else size - 1
+        elif b:  # bytes=-N: N byte cuối
+            start, end = max(0, size - int(b)), size - 1
+        else:
+            return whole
+    except ValueError:
+        return whole
+    end = min(end, size - 1)
+    if start > end:
+        return start, end, 416
+    return start, end, 206
+
+
+def check_request(method, path, headers, port):
+    """Chặn trang web lạ đang mở trong trình duyệt gọi vào server của app. Trả về None nếu cho phép.
+
+    - Host phải là 127.0.0.1/localhost đúng cổng: chặn kiểu tấn công DNS rebinding.
+    - POST phải có Origin là chính app (trình duyệt luôn gửi Origin với POST, kể cả sendBeacon).
+    - GET /api/ phải có header X-Nhac: trang khác không gửi được header tự đặt nếu server không cho phép CORS.
+    /audio, /stream, /cover dùng trong thẻ <audio>/<img> nên không gửi được header, chỉ kiểm Host.
+    """
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    if (headers.get("Host") or "").lower() not in hosts:
+        return "host"
+    if method == "POST":
+        if headers.get("Origin") not in {f"http://{h}" for h in hosts}:
+            return "origin"
+    elif path.startswith("/api/") and headers.get("X-Nhac") != "1":
+        return "header"
+    return None
+
+
+def web_file(url_path):
+    """'/js/app.js' -> (đường dẫn thật trong web/, kiểu nội dung). Không cho thoát ra ngoài web/."""
+    rel = "index.html" if url_path in ("", "/") else urllib.parse.unquote(url_path).lstrip("/")
+    root = os.path.normpath(WEB_DIR)
+    full = os.path.normpath(os.path.join(root, rel))
+    ctype = WEB_TYPES.get(os.path.splitext(full)[1].lower())
+    if not full.startswith(root + os.sep) or not ctype or not os.path.isfile(full):
+        return None
+    return full, ctype
+
+
 class Handler(BaseHTTPRequestHandler):
+    responded = False
+
     def log_message(self, *args):
         pass
+
+    def send_response(self, code, message=None):
+        self.responded = True
+        super().send_response(code, message)
 
     def send_bytes(self, data, ctype, status=200, cache=False):
         self.send_response(status)
@@ -292,126 +445,136 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, obj):
         self.send_bytes(json.dumps(obj, ensure_ascii=False).encode("utf-8"), "application/json; charset=utf-8")
 
-    def do_GET(self):
+    def not_found(self):
+        self.send_bytes(b"", "text/plain", status=404)
+
+    def handle_safely(self, method, route):
         url = urllib.parse.urlparse(self.path)
-        q = urllib.parse.parse_qs(url.query)
-        p = q.get("p", [""])[0]
+        why = check_request(method, url.path, self.headers, self.server.server_address[1])
+        if why:
+            log.warning("Từ chối %s %s (%s)", method, url.path, why)
+            self.send_bytes(b"", "text/plain", status=403)
+            return
         try:
-            if url.path in STATIC:
-                name, ctype = STATIC[url.path]
-                with open(os.path.join(ASSET_DIR, name), "rb") as fh:
-                    self.send_bytes(fh.read(), ctype)
-            elif url.path == "/api/tracks":
-                self.send_json(list_folder(q.get("dir", [""])[0]))
-            elif url.path == "/api/state":
-                with state_lock:
-                    try:
-                        with open(STATE_FILE, "rb") as fh:
-                            self.send_bytes(fh.read(), "application/json; charset=utf-8")
-                    except OSError:
-                        self.send_json({})
-            elif url.path == "/api/lyrics":
-                info = online.meta(p) if online.is_online(p) else None
-                if info:
-                    self.send_json(find_lyrics_for(info, online.cache_key(p) + ".json"))
-                else:
-                    path = audio_path(p)
-                    self.send_json(find_lyrics(path) if path else {})
-            elif url.path == "/api/peaks":
-                path = online.cached(p) if online.is_online(p) else audio_path(p)
-                peaks = compute_peaks(path) if path else None
-                if peaks:
-                    self.send_json(peaks)
-                else:
-                    self.send_bytes(b"", "text/plain", status=404)
-            elif url.path == "/api/search":
-                src = q.get("src", ["yt"])[0]
-                text = q.get("q", [""])[0]
-                try:
-                    self.send_json(online.search(src, text))
-                except Exception as exc:
-                    self.send_json({"error": str(exc)[:400]})
-            elif url.path == "/api/prepare":
-                try:
-                    if not online.is_online(p):
-                        raise online.OnlineError("Bài hát không hợp lệ")
-                    target = online.stream_target(p)
-                    reply = {"ok": True, "stream": target["kind"] == "http",
-                             "info": online.meta(p)}
-                    if target["kind"] == "file":
-                        reply["file"] = target["path"]
-                    self.send_json(reply)
-                except Exception as exc:
-                    self.send_json({"ok": False, "error": str(exc)[:400]})
-            elif url.path == "/api/save":
-                try:
-                    if not online.is_online(p):
-                        raise online.OnlineError("Bài hát không hợp lệ")
-                    folder = library_dir()
-                    os.makedirs(folder, exist_ok=True)
-                    path = online.save(p, folder)
-                    self.send_json({"ok": True, "file": path})
-                except Exception as exc:
-                    self.send_json({"ok": False, "error": str(exc)[:400]})
-            elif url.path == "/api/ping":
-                self.send_bytes(b"nhacplayer", "text/plain")
-            elif url.path == "/api/open":
-                # Lần mở thứ 2 (nhấp đúp file khác) gửi file sang cửa sổ đang chạy
-                if window:
-                    if audio_path(p):
-                        window.evaluate_js(f"openFile({json.dumps(p)})")
-                    window.restore()
-                    window.on_top = True  # kéo cửa sổ lên trước
-                    window.on_top = False
-                self.send_bytes(b"ok", "text/plain")
-            elif url.path == "/cover":
-                if online.is_online(p):
-                    cover = online.cover(p)
-                else:
-                    path = audio_path(p)
-                    cover = get_cover(path) if path else None
-                if cover:
-                    self.send_bytes(cover[1], cover[0], cache=True)
-                else:
-                    self.send_bytes(b"", "text/plain", status=404)
-            elif url.path == "/stream":
-                if online.is_online(p):
-                    self.send_stream(p)
-                else:
-                    path = audio_path(p)
-                    if path:
-                        self.send_audio(path)
-                    else:
-                        self.send_bytes(b"", "text/plain", status=404)
-            elif url.path == "/audio":
-                path = audio_path(p)
-                if path:
-                    self.send_audio(path)
-                else:
-                    self.send_bytes(b"", "text/plain", status=404)
-            else:
-                self.send_bytes(b"", "text/plain", status=404)
-        except (ConnectionError, OSError):
+            route(url)
+        except ConnectionError:
             pass  # trình phát huỷ request giữa chừng (tua, chuyển bài) là chuyện bình thường
+        except Exception:
+            log.exception("Lỗi khi xử lý %s %s", method, url.path)
+            if not self.responded:
+                try:
+                    self.send_bytes(b"", "text/plain", status=500)
+                except OSError:
+                    pass
+
+    def do_GET(self):
+        self.handle_safely("GET", self.route_get)
 
     def do_POST(self):
-        url = urllib.parse.urlparse(self.path)
+        self.handle_safely("POST", self.route_post)
+
+    def route_get(self, url):
+        q = urllib.parse.parse_qs(url.query)
+        p = q.get("p", [""])[0]
+        if not url.path.startswith(("/api/", "/cover", "/stream", "/audio")):
+            found = web_file(url.path)
+            if not found:
+                return self.not_found()
+            with open(found[0], "rb") as fh:
+                return self.send_bytes(fh.read(), found[1])
+        if url.path == "/api/tracks":
+            self.send_json(list_folder(q.get("dir", [""])[0]))
+        elif url.path == "/api/state":
+            with state_lock:
+                try:
+                    with open(STATE_FILE, "rb") as fh:
+                        self.send_bytes(fh.read(), "application/json; charset=utf-8")
+                except FileNotFoundError:
+                    self.send_json({})
+        elif url.path == "/api/lyrics":
+            info = online.meta(p) if online.is_online(p) else None
+            if info:
+                self.send_json(find_lyrics_for(info, online.cache_key(p) + ".json"))
+            else:
+                path = audio_path(p)
+                self.send_json(find_lyrics(path) if path else {})
+        elif url.path == "/api/peaks":
+            path = online.cached(p) if online.is_online(p) else audio_path(p)
+            peaks = compute_peaks(path) if path else None
+            if peaks:
+                self.send_json(peaks)
+            else:
+                self.not_found()
+        elif url.path == "/api/search":
+            src = q.get("src", ["yt"])[0]
+            text = q.get("q", [""])[0]
+            try:
+                self.send_json(online.search(src, text))
+            except Exception as exc:
+                log.warning("Tìm %s lỗi: %s", src, exc)
+                self.send_json({"error": str(exc)[:400]})
+        elif url.path == "/api/prepare":
+            try:
+                if not online.is_online(p):
+                    raise online.OnlineError("Bài hát không hợp lệ")
+                target = online.stream_target(p)
+                reply = {"ok": True, "stream": target["kind"] == "http", "info": online.meta(p)}
+                if target["kind"] == "file":
+                    reply["file"] = target["path"]
+                self.send_json(reply)
+            except Exception as exc:
+                log.warning("Không chuẩn bị được %s: %s", p, exc)
+                self.send_json({"ok": False, "error": str(exc)[:400]})
+        elif url.path == "/api/save":
+            try:
+                if not online.is_online(p):
+                    raise online.OnlineError("Bài hát không hợp lệ")
+                folder = library_dir()
+                os.makedirs(folder, exist_ok=True)
+                path = online.save(p, folder)
+                self.send_json({"ok": True, "file": path})
+            except Exception as exc:
+                log.warning("Không lưu được %s: %s", p, exc)
+                self.send_json({"ok": False, "error": str(exc)[:400]})
+        elif url.path == "/api/ping":
+            self.send_bytes(b"nhacplayer", "text/plain")
+        elif url.path == "/api/open":
+            open_in_window(p)  # lần mở thứ 2 (nhấp đúp file khác) gửi file sang cửa sổ đang chạy
+            self.send_bytes(b"ok", "text/plain")
+        elif url.path == "/cover":
+            if online.is_online(p):
+                cover = online.cover(p)
+            else:
+                path = audio_path(p)
+                cover = get_cover(path) if path else None
+            if cover:
+                self.send_bytes(cover[1], cover[0], cache=True)
+            else:
+                self.not_found()
+        elif url.path == "/stream":
+            if online.is_online(p):
+                self.send_stream(p)
+            else:
+                path = audio_path(p)
+                self.send_audio(path) if path else self.not_found()
+        elif url.path == "/audio":
+            path = audio_path(p)
+            self.send_audio(path) if path else self.not_found()
+        else:
+            self.not_found()
+
+    def route_post(self, url):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
         try:
             if url.path == "/api/state":
-                json.loads(body)  # chỉ lưu khi là JSON hợp lệ
-                with state_lock:
-                    tmp = STATE_FILE + ".tmp"
-                    with open(tmp, "wb") as fh:
-                        fh.write(body)
-                    os.replace(tmp, STATE_FILE)
+                write_state(body)
                 self.send_json({"ok": True})
             elif url.path == "/api/meta":
                 items = [track_info(x) for x in json.loads(body)]
                 self.send_json([x for x in items if x])
             else:
-                self.send_bytes(b"", "text/plain", status=404)
-        except (ValueError, ConnectionError, OSError):
+                self.not_found()
+        except ValueError:
             self.send_bytes(b"", "text/plain", status=400)
 
     def send_stream(self, p):
@@ -419,7 +582,8 @@ class Handler(BaseHTTPRequestHandler):
         for attempt in range(2):
             try:
                 target = online.stream_target(p)
-            except Exception:
+            except Exception as exc:
+                log.warning("Không lấy được luồng %s: %s", p, exc)
                 target = None
             if not target:
                 self.send_bytes(b"", "text/plain", status=502)
@@ -467,23 +631,12 @@ class Handler(BaseHTTPRequestHandler):
     def send_audio(self, path):
         """Gửi file nhạc, hỗ trợ Range để tua được."""
         size = os.path.getsize(path)
-        start, end = 0, size - 1
-        rng = self.headers.get("Range")
-        status = 200
-        if rng and rng.startswith("bytes="):
-            a, _, b = rng[6:].split(",")[0].partition("-")
-            if a:
-                start = int(a)
-                end = int(b) if b else size - 1
-            elif b:  # bytes=-N: N byte cuối
-                start = max(0, size - int(b))
-            end = min(end, size - 1)
-            if start > end:
-                self.send_response(416)
-                self.send_header("Content-Range", f"bytes */{size}")
-                self.end_headers()
-                return
-            status = 206
+        start, end, status = parse_range(self.headers.get("Range"), size)
+        if status == 416:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.end_headers()
+            return
         self.send_response(status)
         ext = os.path.splitext(path)[1].lower()
         self.send_header("Content-Type", STREAM_TYPES.get(ext, "application/octet-stream"))
@@ -579,13 +732,7 @@ def save_window_size():
     form = window.native
     if form.WindowState != FormWindowState.Normal:
         return
-    settings = load_settings()
-    settings["window"] = [round(form.Size.Width / css_scale), round(form.Size.Height / css_scale)]
-    try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as fh:
-            json.dump(settings, fh, ensure_ascii=False, indent=2)
-    except OSError:
-        pass
+    update_settings(window=[round(form.Size.Width / css_scale), round(form.Size.Height / css_scale)])
 
 
 def fit_maximize_to_work_area():
@@ -598,8 +745,26 @@ def fit_maximize_to_work_area():
     on_ui(do)
 
 
+def open_in_window(p):
+    """Đưa file sang cửa sổ đang mở và kéo cửa sổ lên trước.
+    Trang đang nạp lại (vd. lúc vừa mở app) thì để dành, nạp xong on_loaded sẽ mở."""
+    global pending_open
+    if not window:
+        return
+    try:
+        if audio_path(p):
+            window.evaluate_js(f"openFile({json.dumps(p)})")
+        window.restore()
+        window.on_top = True  # kéo cửa sổ lên trước
+        window.on_top = False
+    except Exception:
+        log.warning("Không chuyển được file sang cửa sổ đang mở, để dành đến khi trang nạp xong", exc_info=True)
+        if audio_path(p):
+            pending_open = p
+
+
 class Api:
-    """Hàm gọi được từ giao diện qua window.pywebview.api."""
+    """Hàm gọi được từ giao diện qua window.pywebview.api (chỉ trang của app gọi được, trang web khác thì không)."""
 
     def ready(self, dpr):
         """Trang báo tỉ lệ co giãn thật: lần đầu thì đặt cỡ cửa sổ cho đúng px giao diện rồi căn giữa."""
@@ -649,16 +814,50 @@ class Api:
                 fh.write(content)
             return True
         except Exception:
+            log.warning("Không lưu được file %s", name, exc_info=True)
             return False
 
     def reveal(self, path):
-        if online.is_online(path):
-            try:
-                path = online.prepare(path)
-            except Exception:
-                return
-        if path and os.path.isfile(path):
+        path = audio_path(path)
+        if path:
             subprocess.Popen(["explorer", "/select,", path])
+
+    # ---- mục Ứng dụng trong bảng Âm thanh
+    def app_info(self):
+        return {"version": core.VERSION, "library": library_dir(), "frozen": core.FROZEN}
+
+    def choose_library(self):
+        path = self.pick_folder()
+        if not path:
+            return None
+        update_settings(library=path)
+        log.info("Đổi thư mục thư viện: %s", path)
+        return path
+
+    def check_update(self, force=False):
+        return updater.check(bool(force))
+
+    def install_update(self):
+        try:
+            updater.download_and_run()
+        except Exception as exc:
+            log.warning("Cập nhật thất bại", exc_info=True)
+            return {"ok": False, "error": f"Không cập nhật được: {str(exc)[:160]}"}
+        threading.Timer(1.0, window.destroy).start()  # nhường chỗ cho bộ cài ghi đè file
+        return {"ok": True}
+
+    def deps(self):
+        return {"missing": core.missing_tools(), "winget": core.winget_available()}
+
+    def install_deps(self):
+        return core.install_tools()
+
+    def open_logs(self):
+        os.makedirs(core.LOG_DIR, exist_ok=True)
+        os.startfile(core.LOG_DIR)
+
+    def log_js(self, msg):
+        log.error("JS: %s", str(msg)[:4000])
 
 
 def on_shown():
@@ -681,15 +880,15 @@ def on_loaded():
         reloaded = []
 
         def do():
-            core = window.native.webview.CoreWebView2
-            if not core.Settings.IsNonClientRegionSupportEnabled:
-                core.Settings.IsNonClientRegionSupportEnabled = True
-                core.Reload()
+            core_wv = window.native.webview.CoreWebView2
+            if not core_wv.Settings.IsNonClientRegionSupportEnabled:
+                core_wv.Settings.IsNonClientRegionSupportEnabled = True
+                core_wv.Reload()
                 reloaded.append(True)
         try:
             on_ui(do)
         except Exception:
-            pass
+            log.warning("Không bật được app-region của WebView2", exc_info=True)
         if reloaded:
             return
     if pending_open:
@@ -709,12 +908,13 @@ def on_state(maxed):
 def forward_to_running(path):
     """Nếu đã có cửa sổ đang chạy thì gửi file sang đó. Trả về True nếu đã gửi."""
     base = f"http://127.0.0.1:{PORT}/api/"
+    headers = {"X-Nhac": "1"}
     try:
-        with urllib.request.urlopen(base + "ping", timeout=1) as r:
+        with urllib.request.urlopen(urllib.request.Request(base + "ping", headers=headers), timeout=1) as r:
             if r.read() != b"nhacplayer":
                 return False
         query = "?p=" + urllib.parse.quote(path) if path else ""
-        urllib.request.urlopen(base + "open" + query, timeout=3).close()
+        urllib.request.urlopen(urllib.request.Request(base + "open" + query, headers=headers), timeout=5).close()
         return True
     except OSError:
         return False
@@ -724,6 +924,7 @@ def make_server():
     try:
         return ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     except OSError:  # cổng bị chương trình khác chiếm -> dùng cổng ngẫu nhiên
+        log.warning("Cổng %s đang bận, dùng cổng ngẫu nhiên", PORT)
         return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 
 
@@ -732,6 +933,7 @@ def main():
     if sys.stdout is None:  # chạy không có console (pythonw / exe)
         sys.stdout = sys.stderr = open(os.devnull, "w", encoding="utf-8")
     os.makedirs(DATA_DIR, exist_ok=True)
+    core.setup_logging()
     path = next((os.path.abspath(a) for a in sys.argv[1:] if audio_path(os.path.abspath(a))), None)
 
     if forward_to_running(path):
@@ -739,7 +941,7 @@ def main():
 
     server = make_server()
     server.daemon_threads = True
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(target=server.serve_forever, name="server", daemon=True).start()
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     pending_open = path
 
@@ -759,6 +961,7 @@ def main():
     window.events.restored += lambda: on_state(False)
     webview.start(private_mode=False, storage_path=os.path.join(DATA_DIR, "webview"))
     server.shutdown()
+    log.info("Đóng app")
 
 
 if __name__ == "__main__":
